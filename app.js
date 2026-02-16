@@ -1,21 +1,24 @@
-// ======== Config (paste your live endpoints here) ========
-// All POSTs use Content-Type: text/plain with raw JSON body (no preflight).
+// ======== Config (update these 3 URLs if they change) ========
 const CONFIG = {
   versions: {
     ui: 'UI v0.1.0',
     pricing: 'Pricing v1.1.0',
     rates: 'Rates v1.3.0',
   },
-  // WS‑1 (Rates): include action=rates & default lpc spread
-  ratesUrl: 'https://script.google.com/macros/s/AKfycbxFUmGP213ag2uV4cey3V2ox0diofarpDKNt0szGrSajVpO8CF_paFN7u_R9cPa4Y3FwA/exec?action=rates&lpc=2.25',
 
-  // WS‑2 (Pricing)
-  pricingBase: 'https://script.google.com/macros/s/AKfycbzM2epYNmWxxIP5Sp4Fnl1iz4tCcSf_lCVGb0Hm-0pQBaST8mb8EsQ-jVC6_5WIXZon/exec',
+  // WS‑1 (Rates): optional preload; Apps Script web app supports POST with text/plain
+  ratesUrl:
+    'https://script.google.com/macros/s/AKfycbxFUmGP213ag2uV4cey3V2ox0diofarpDKNt0szGrSajVpO8CF_paFN7u_R9cPa4Y3FwA/exec?action=rates&lpc=2.25',
 
-  // WS‑3 (Leads)
-  leadsBase: 'https://script.google.com/macros/s/AKfycbxBP3K11wYn-r6_98B3qsJUMI8yj8bKRX8gLFarQ_f5WEvEMSfXHQ9neg4RQJhTlnKv/exec',
+  // WS‑2 (Pricing): we will call ?action=price
+  pricingBase:
+    'https://script.google.com/macros/s/AKfycbzM2epYNmWxxIP5Sp4Fnl1iz4tCcSf_lCVGb0Hm-0pQBaST8mb8EsQ-jVC6_5WIXZon/exec',
 
-  // Sheets (read-only in UI, just for reference)
+  // WS‑3 (Leads): we will call ?action=upsertLead and ?action=saveQuote
+  leadsBase:
+    'https://script.google.com/macros/s/AKfycbxBP3K11wYn-r6_98B3qsJUMI8yj8bKRX8gLFarQ_f5WEvEMSfXHQ9neg4RQJhTlnKv/exec',
+
+  // Sheets (read-only in UI, for display only)
   llpaSheetId: '1ZEtVSxpOD2iYxH348ynQgzBOTofiAFFxZ04Ax6cCXHw',
   leadsSheetId: '1g4TSX6MFR-m0We1LfPKKsEfsXdCJ8BFL3hINmU2UlD8',
 };
@@ -26,30 +29,31 @@ const LS_KEYS = {
 };
 
 // ======== Utilities ========
-
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
 function fmtMoney(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
-  return n.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
-}
-
-function fmtPct(n) {
-  if (n === null || n === undefined || Number.isNaN(n)) return '—';
-  return `${(Number(n) * 100).toFixed(3)}%`;
+  return n.toLocaleString(undefined, {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2,
+  });
 }
 
 function nowStampMMDD_HHMM(d = new Date()) {
   const pad = (x) => String(x).padStart(2, '0');
-  return `${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}`;
 }
 
-function onlyDigits(s = '') { return String(s).replace(/\D+/g, ''); }
+function onlyDigits(s = '') {
+  return String(s).replace(/\D+/g, '');
+}
 function normalizeZip5(z) {
   const digits = onlyDigits(z).slice(0, 5);
-  // pad start to preserve leading zeros (e.g., 02134)
-  return digits.padStart(5, '0');
+  return digits.padStart(5, '0'); // preserve leading zeros
 }
 
 function debounce(fn, ms = 350) {
@@ -62,61 +66,88 @@ function debounce(fn, ms = 350) {
 
 function setStatus(msg, isError = false) {
   const el = $('#statusArea');
+  if (!el) return;
   el.textContent = msg || '';
-  el.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+  el.style.color = isError ? '#ef4444' : 'var(--muted, #aab2d5)';
 }
 
 function toggleLoading(disabled) {
-  $('#btnCalculate').disabled = disabled || !hasLeadToken();
-  $('#btnSave').disabled = disabled || !hasLeadToken();
+  const calc = $('#btnCalculate');
+  const save = $('#btnSave');
+  if (calc) calc.disabled = disabled || !hasLeadToken();
+  if (save) save.disabled = disabled || !hasLeadToken();
 }
 
 function hasLeadToken() {
   return !!localStorage.getItem(LS_KEYS.leadToken);
 }
 
-// ======== API Helpers ========
-
+// ======== API Helpers (diagnostic-friendly) ========
 async function postTextJson(url, bodyObj) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(bodyObj),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const data = await res.json();
-  return data;
+  let res, text;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(bodyObj),
+    });
+  } catch (netErr) {
+    setStatus(`Network error: ${netErr.message}`, true);
+    throw netErr;
+  }
+
+  text = await res.text();
+  if (!res.ok) {
+    const snippet = text.slice(0, 200);
+    const action = new URL(url).searchParams.get('action') || 'call';
+    const msg = `HTTP ${res.status} on ${action} — ${snippet}`;
+    setStatus(msg, true);
+    console.error('API error', { url, status: res.status, body: text });
+    throw new Error(msg);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const action = new URL(url).searchParams.get('action') || 'call';
+    const msg = `Unexpected non‑JSON response for ${action}`;
+    setStatus(msg, true);
+    console.error('Parse error', { url, text });
+    throw e;
+  }
 }
 
 async function callPrice(inputs, leadToken) {
   const url = `${CONFIG.pricingBase}?action=price`;
   const body = { payload: { inputs, ...(leadToken ? { leadToken } : {}) } };
+  console.debug('→ price payload', body);
   return postTextJson(url, body);
 }
 
 async function callUpsertLead(leadFields) {
   const url = `${CONFIG.leadsBase}?action=upsertLead`;
-  // As per contract, raw JSON in text/plain with "payload": { … }
-  return postTextJson(url, { payload: leadFields });
+  const body = { payload: leadFields };
+  console.debug('→ upsertLead payload', body);
+  return postTextJson(url, body);
 }
 
 async function callSaveQuote(savePayload) {
   const url = `${CONFIG.leadsBase}?action=saveQuote`;
+  console.debug('→ saveQuote payload', savePayload);
   return postTextJson(url, { payload: savePayload });
 }
 
-// Optional: preload rates (WS‑1), not required for pricing
+// Optional: preload rates (non-blocking)
 async function preloadRates() {
   try {
-    const res = await postTextJson(CONFIG.ratesUrl, {}); // Apps Script ignores body for GET-like params
+    const res = await postTextJson(CONFIG.ratesUrl, {});
     console.debug('Rates preload:', res);
   } catch (e) {
     console.debug('Rates preload failed (non-blocking):', e.message);
   }
 }
 
-// ======== Input State & Mappers ========
-
+// ======== Input State & Program Panels ========
 function gatherInputs() {
   const program = $('#program').value;
   const txn = $('#txn').value;
@@ -139,7 +170,6 @@ function gatherInputs() {
     hoa: Number($('#hoa').value || 0),
   };
 
-  // Program-specific flags
   if (program === 'CONV30') {
     base.pmiToggle = $('#pmiToggle').checked;
     base.dtiOver45 = $('#dtiOver45').checked;
@@ -158,34 +188,33 @@ function gatherInputs() {
 }
 
 function showProgramPanel(program) {
-  $('#panelCONV').classList.toggle('hidden', program !== 'CONV30');
-  $('#panelFHA').classList.toggle('hidden', program !== 'FHA30');
-  $('#panelVA').classList.toggle('hidden', program !== 'VA30');
-  $('#panelDSCR').classList.toggle('hidden', program !== 'DSCR30');
+  $('#panelCONV')?.classList.toggle('hidden', program !== 'CONV30');
+  $('#panelFHA')?.classList.toggle('hidden', program !== 'FHA30');
+  $('#panelVA')?.classList.toggle('hidden', program !== 'VA30');
+  $('#panelDSCR')?.classList.toggle('hidden', program !== 'DSCR30');
 }
 
 // ======== Rendering ========
-
 function renderResults(data, inputs) {
   const el = $('#results');
+  if (!el) return;
+
   if (!data || data.ok === false) {
-    el.innerHTML = `<div class="placeholder">No results. ${data && data.message ? data.message : ''}</div>`;
+    el.innerHTML = `<div class="placeholder">No results. ${
+      data && data.message ? data.message : ''
+    }</div>`;
     return;
   }
 
-  const {
-    noteRate, parRate, totalLoan,
-    piMonthly, miMonthly, totalPayment,
-    breakdown,
-  } = data;
+  const { noteRate, parRate, totalLoan, piMonthly, miMonthly, totalPayment, breakdown } = data;
 
-  const ltv = inputs.ltv;
-  const programLabel = {
-    CONV30: 'Conventional 30‑Year',
-    FHA30: 'FHA 30‑Year',
-    VA30: 'VA 30‑Year',
-    DSCR30: 'DSCR 30‑Year',
-  }[inputs.program] || inputs.program;
+  const programLabel =
+    {
+      CONV30: 'Conventional 30‑Year',
+      FHA30: 'FHA 30‑Year',
+      VA30: 'VA 30‑Year',
+      DSCR30: 'DSCR 30‑Year',
+    }[inputs.program] || inputs.program;
 
   el.innerHTML = `
     <div class="grid two-col">
@@ -193,14 +222,18 @@ function renderResults(data, inputs) {
         <h3>${programLabel}</h3>
         <div>Txn: <strong>${inputs.txn}</strong></div>
         <div>Loan: <strong>${fmtMoney(inputs.loan)}</strong></div>
-        <div>LTV: <strong>${ltv.toFixed(2)}%</strong></div>
+        <div>LTV: <strong>${(inputs.ltv || 0).toFixed(2)}%</strong></div>
         <div>FICO: <strong>${inputs.fico}</strong></div>
         <div>Borrower Pts: <strong>${inputs.borrowerPts.toFixed(3)}%</strong></div>
       </div>
 
       <div>
-        <div>Par Rate: <strong>${parRate != null ? (Number(parRate).toFixed(3) + '%') : '—'}</strong></div>
-        <div>Note Rate: <strong>${noteRate != null ? (Number(noteRate).toFixed(3) + '%') : '—'}</strong></div>
+        <div>Par Rate: <strong>${
+          parRate != null ? Number(parRate).toFixed(3) + '%' : '—'
+        }</strong></div>
+        <div>Note Rate: <strong>${
+          noteRate != null ? Number(noteRate).toFixed(3) + '%' : '—'
+        }</strong></div>
         <div>Total Loan: <strong>${fmtMoney(totalLoan)}</strong></div>
         <div>PI: <strong>${fmtMoney(piMonthly)}</strong></div>
         <div>MI: <strong>${fmtMoney(miMonthly)}</strong></div>
@@ -208,12 +241,14 @@ function renderResults(data, inputs) {
       </div>
     </div>
 
-    ${breakdown ? `
-      <div style="margin-top: 12px;">
-        <h3>Breakdown</h3>
-        <pre style="white-space:pre-wrap;">${JSON.stringify(breakdown, null, 2)}</pre>
-      </div>
-    ` : ''}
+    ${
+      breakdown
+        ? `<div style="margin-top:12px;">
+             <h3>Breakdown</h3>
+             <pre style="white-space:pre-wrap;">${JSON.stringify(breakdown, null, 2)}</pre>
+           </div>`
+        : ''
+    }
   `;
 }
 
@@ -221,89 +256,81 @@ function renderLastQuotedAt() {
   $('#lastQuoted').textContent = `Last quoted at ${nowStampMMDD_HHMM()}`;
 }
 
-// ======== Lead Gating ========
-
+// ======== Lead Gate: modal open/close & submit ========
 function openLeadModal() {
   const dlg = $('#leadModal');
-  if (typeof dlg.showModal === 'function') {
-    dlg.showModal();
-  } else {
-    dlg.classList.remove('hidden');
-  }
+  if (!dlg) return;
+  if (typeof dlg.showModal === 'function') dlg.showModal();
+  else dlg.classList.remove('hidden');
 }
-
 function closeLeadModal() {
   const dlg = $('#leadModal');
+  if (!dlg) return;
   if (typeof dlg.close === 'function') dlg.close();
   dlg.classList.add('hidden');
 }
 
 async function handleLeadSubmit(e) {
   e.preventDefault();
-  $('#leadStatus').textContent = 'Creating lead…';
-  $('#leadStatus').style.color = 'var(--muted)';
+  const status = $('#leadStatus');
+  if (status) {
+    status.textContent = 'Creating lead…';
+    status.style.color = 'var(--muted)';
+  }
 
   const name = $('#leadName').value.trim();
   const email = $('#leadEmail').value.trim();
   const phone = $('#leadPhone').value.trim();
   const zip5 = normalizeZip5($('#leadZip').value);
 
-  // Basic validation
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    $('#leadStatus').textContent = 'Please enter a valid email.';
-    $('#leadStatus').style.color = 'var(--danger)';
+    status.textContent = 'Please enter a valid email.';
+    status.style.color = '#ef4444';
     return;
   }
   if (!/^\d{5}$/.test(zip5)) {
-    $('#leadStatus').textContent = 'ZIP must be 5 digits.';
-    $('#leadStatus').style.color = 'var(--danger)';
+    status.textContent = 'ZIP must be 5 digits.';
+    status.style.color = '#ef4444';
     return;
   }
 
   try {
     const leadFields = {
-      // Match existing sheet field names as provided:
       'Primary Borrower Name': name,
       'Primary Borrower Email': email,
       'Primary Borrower Phone': phone,
       'Subject ZIP': zip5,
-      'Source': 'UI-W4',
+      Source: 'UI-W4',
     };
     const res = await callUpsertLead(leadFields);
-
-    if (!res || !res.ok || !res.leadToken) {
-      throw new Error('Lead service returned an unexpected response.');
-    }
+    if (!res || !res.ok || !res.leadToken) throw new Error('Unexpected lead response.');
 
     localStorage.setItem(LS_KEYS.leadToken, res.leadToken);
     localStorage.setItem(LS_KEYS.leadEmail, email);
 
     $('#btnCalculate').disabled = false;
     $('#btnSave').disabled = false;
-    $('#leadStatus').textContent = 'Lead created. Loading your pricing…';
 
+    status.textContent = 'Lead created. Loading your pricing…';
     closeLeadModal();
 
-    // Immediately price after gating
-    await doPrice();
+    await doPrice(); // immediate first price
   } catch (err) {
     console.error(err);
-    $('#leadStatus').textContent = `Lead error: ${err.message || err}`;
-    $('#leadStatus').style.color = 'var(--danger)';
+    status.textContent = `Lead error: ${err.message || err}`;
+    status.style.color = '#ef4444';
   }
 }
 
-// ======== Pricing Flow ========
-
+// ======== Pricing & Save ========
 async function doPrice() {
   const leadToken = localStorage.getItem(LS_KEYS.leadToken);
   if (!leadToken) {
     setStatus('Please submit the lead form to unlock pricing.', true);
     return;
   }
-  const inputs = gatherInputs();
 
-  // Basic inline validation
+  const inputs = gatherInputs();
   if (inputs.loan <= 0 || inputs.fico < 300) {
     setStatus('Please check your loan amount and FICO.', true);
     return;
@@ -327,8 +354,6 @@ async function doPrice() {
 
 const debouncedPrice = debounce(doPrice, 350);
 
-// ======== Save Quote (Optional) ========
-
 async function doSaveQuote() {
   const leadToken = localStorage.getItem(LS_KEYS.leadToken);
   if (!leadToken) {
@@ -345,8 +370,6 @@ async function doSaveQuote() {
       leadToken,
       inputs,
       savedAt: nowStampMMDD_HHMM(),
-      // Optionally include last results snapshot if you want richer history:
-      // results: lastResultsCache
     };
     const res = await callSaveQuote(payload);
     if (!res || res.ok === false) throw new Error('Save failed.');
@@ -359,8 +382,7 @@ async function doSaveQuote() {
   }
 }
 
-// ======== Wire Up ========
-
+// ======== Wire up ========
 function initConfigUi() {
   $('#cfgRatesUrl').value = CONFIG.ratesUrl;
   $('#cfgPricingUrl').value = `${CONFIG.pricingBase}?action=price`;
@@ -369,32 +391,51 @@ function initConfigUi() {
   $('#cfgLeadsSheet').value = CONFIG.leadsSheetId;
 
   const versionChip = $('#versionChip');
-  versionChip.textContent = `${CONFIG.versions.ui} • ${CONFIG.versions.pricing} • ${CONFIG.versions.rates}`;
-  $('#footerVersion').textContent = CONFIG.versions.ui;
+  if (versionChip) {
+    versionChip.textContent = `${CONFIG.versions.ui} • ${CONFIG.versions.pricing} • ${CONFIG.versions.rates}`;
+  }
+  const footerVersion = $('#footerVersion');
+  if (footerVersion) footerVersion.textContent = CONFIG.versions.ui;
 }
 
 function initEvents() {
-  // Program panel toggle
+  // Program panel switching
   $('#program').addEventListener('change', (e) => {
     showProgramPanel(e.target.value);
     if (hasLeadToken()) debouncedPrice();
   });
 
-  // Input listeners: auto re‑price when leadToken exists
+  // Auto‑reprice on changes (when gated)
   [
-    '#txn', '#termYears', '#loan', '#value', '#fico', '#borrowerPts', '#taxes', '#ins', '#hoa',
-    '#pmiToggle', '#dtiOver45', '#twoPlusBorrowers',
-    '#financeUfmip', '#annualMip',
-    '#vaExempt', '#vaFirstUse',
-    '#dscrRatio'
+    '#txn',
+    '#termYears',
+    '#loan',
+    '#value',
+    '#fico',
+    '#borrowerPts',
+    '#taxes',
+    '#ins',
+    '#hoa',
+    '#pmiToggle',
+    '#dtiOver45',
+    '#twoPlusBorrowers',
+    '#financeUfmip',
+    '#annualMip',
+    '#vaExempt',
+    '#vaFirstUse',
+    '#dscrRatio',
   ].forEach((sel) => {
     const el = $(sel);
     if (!el) return;
-    el.addEventListener('input', () => { if (hasLeadToken()) debouncedPrice(); });
-    el.addEventListener('change', () => { if (hasLeadToken()) debouncedPrice(); });
+    el.addEventListener('input', () => {
+      if (hasLeadToken()) debouncedPrice();
+    });
+    el.addEventListener('change', () => {
+      if (hasLeadToken()) debouncedPrice();
+    });
   });
 
-  // Gate actions
+  // Gate + actions
   $('#btnGetResults').addEventListener('click', openLeadModal);
   $('#btnCalculate').addEventListener('click', doPrice);
   $('#btnSave').addEventListener('click', doSaveQuote);
@@ -403,7 +444,7 @@ function initEvents() {
   $('#leadForm').addEventListener('submit', handleLeadSubmit);
   $('#leadCancel').addEventListener('click', closeLeadModal);
 
-  // If token already present (returning user), enable buttons & auto price
+  // Returning user
   if (hasLeadToken()) {
     $('#btnCalculate').disabled = false;
     $('#btnSave').disabled = false;
@@ -413,9 +454,10 @@ function initEvents() {
 }
 
 // ======== Boot ========
-window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', () => {
+  console.log('W4 UI booting…');
   initConfigUi();
   initEvents();
   showProgramPanel($('#program').value);
-  preloadRates(); // non-blocking
+  preloadRates(); // optional, non-blocking
 });
