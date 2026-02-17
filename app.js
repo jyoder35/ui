@@ -1,106 +1,32 @@
-// ======== AZM Workspace 4 — UI Engine (GitHub Pages) ========
-// Lead gate (no ZIP), auto-pricing, improved saveQuote, ZIP->State escrows,
-// transaction-aware inputs, editable LTV, FICO & Points sliders.
+/* ===========================
+   AZM – Workspace 4 (UI-W4)
+   Lead-gated calculator UI
+   =========================== */
 
-// ---------------- Config ----------------
-const CONFIG = {
-  versions: { ui: 'UI v0.1.2', pricing: 'Pricing v1.1.0', rates: 'Rates v1.3.0' },
+/** ======= CONFIG (baked-in defaults; dev panel can override at runtime) ======= **/
+const WS2_PRICE = 'https://script.google.com/macros/s/AKfycbzM2epYNmWxxIP5Sp4Fnl1iz4tCcSf_lCVGb0Hm-0pQBaST8mb8EsQ-jVC6_5WIXZon/exec?action=price';
+let   WS3_BASE  = 'https://script.google.com/macros/s/AKfycbxBP3K11wYn-r6_98B3qsJUMI8yj8bKRX8gLFarQ_f5WEvEMSfXHQ9neg4RQJhTlnKv/exec'; // provided
+const WS3_UPSERT = () => `${WS3_BASE}?action=upsertLead`;
+const WS3_SAVE   = () => `${WS3_BASE}?action=saveQuote`;
 
-  // WS‑1 (Rates): optional preload; DISABLED to avoid CORS noise in GitHub Pages context
-  ratesUrl:
-    'https://script.google.com/macros/s/AKfycbxFUmGP213ag2uV4cey3V2ox0diofarpDKNt0szGrSajVpO8CF_paFN7u_R9cPa4Y3FwA/exec?action=rates&lpc=2.25',
+/** Debounce interval for auto-pricing */
+const REPRICE_DEBOUNCE_MS = 350;
 
-  // WS‑2 (Pricing)
-  pricingBase:
-    'https://script.google.com/macros/s/AKfycbzM2epYNmWxxIP5Sp4Fnl1iz4tCcSf_lCVGb0Hm-0pQBaST8mb8EsQ-jVC6_5WIXZon/exec',
+/** Initial ZIP gating value */
+const INITIAL_ZIP = '85254';
 
-  // WS‑3 (Leads)
-  leadsBase:
-    'https://script.google.com/macros/s/AKfycbxBP3K11wYn-r6_98B3qsJUMI8yj8bKRX8gLFarQ_f5WEvEMSfXHQ9neg4RQJhTlnKv/exec',
+/** LocalStorage keys */
+const LS_TOKEN = 'azm_leadToken';
+const LS_EMAIL = 'azm_leadEmail';
+const LS_WS3   = 'azm_ws3_base';
+const LS_TAX   = 'azm_tax_table';
+const LS_HOI   = 'azm_hoi_table';
+const LS_DEV   = 'azm_devMode';
 
-  // Sheets (display-only)
-  llpaSheetId: '1ZEtVSxpOD2iYxH348ynQgzBOTofiAFFxZ04Ax6cCXHw',
-  leadsSheetId: '1g4TSX6MFR-m0We1LfPKKsEfsXdCJ8BFL3hINmU2UlD8',
-};
-
-// Local storage keys
-const LS_KEYS = { leadToken: 'azm_leadToken', leadEmail: 'azm_leadEmail' };
-
-// Cached last successful price result (for Save)
-let lastPriceResult = null;
-
-// ---------------- DOM Helpers ----------------
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
-
-// ---------------- Formatters ----------------
-function fmtMoney(n) {
-  if (n === null || n === undefined || Number.isNaN(n)) return '—';
-  return n.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
-}
-function nowStampMMDD_HHMM(d = new Date()) {
-  const pad = (x) => String(x).padStart(2, '0');
-  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-function onlyDigits(s = '') { return String(s).replace(/\D+/g, ''); }
-function normalizeZip5(z) { return onlyDigits(z).slice(0, 5).padStart(5, '0'); }
-function debounce(fn, ms = 350) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
-function setStatus(msg, isError = false) {
-  const el = $('#statusArea'); if (!el) return;
-  el.textContent = msg || '';
-  el.style.color = isError ? '#ef4444' : 'var(--muted, #aab2d5)';
-}
-function hasLeadToken() { return !!localStorage.getItem(LS_KEYS.leadToken); }
-function toggleLoading(disabled) {
-  $('#btnCalculate') && ($('#btnCalculate').disabled = disabled || !hasLeadToken());
-  $('#btnSave') && ($('#btnSave').disabled = disabled || !hasLeadToken());
-}
-
-// ---------------- Transaction-aware trio sync ----------------
-function getNumber(el, fallback = 0) {
-  const v = Number(el?.value);
-  return Number.isFinite(v) ? v : fallback;
-}
-function setNumber(el, n) { if (el) el.value = Number(n ?? 0); }
-function setText(el, s) { if (el) el.textContent = s; }
-
-function syncTrioFrom(source) {
-  const valueEl = $('#value'), loanEl = $('#loan'), ltvEl = $('#ltv');
-  const value = getNumber(valueEl, 0), loan = getNumber(loanEl, 0);
-
-  if (source === 'value') {
-    if (ltvEl) { setNumber(loanEl, Math.round(getNumber(ltvEl) / 100 * getNumber(valueEl))); }
-    else if (value > 0) { setNumber(ltvEl, (loan / value) * 100); }
-  } else if (source === 'loan') {
-    if (value > 0) setNumber(ltvEl, (getNumber(loanEl) / value) * 100);
-  } else if (source === 'ltv') {
-    setNumber(loanEl, Math.round(getNumber(ltvEl) / 100 * value));
-  } else if (source === 'downPct') {
-    setNumber(loanEl, Math.round(value * (1 - getNumber($('#downPct'), 0) / 100)));
-    if (value > 0) setNumber(ltvEl, (getNumber(loanEl) / value) * 100);
-  } else if (source === 'equityPct') {
-    setNumber(loanEl, Math.round(value * (1 - getNumber($('#equityPct'), 0) / 100)));
-    if (value > 0) setNumber(ltvEl, (getNumber(loanEl) / value) * 100);
-  }
-
-  if (ltvEl) setNumber(ltvEl, Math.max(0, Math.min(200, getNumber(ltvEl))));
-  if ($('#downPct')) setNumber($('#downPct'), Math.max(0, Math.min(100, getNumber($('#downPct')))));
-  if ($('#equityPct')) setNumber($('#equityPct'), Math.max(0, Math.min(100, getNumber($('#equityPct')))));
-}
-
-function updateTxnPanels() {
-  const txn = $('#txn')?.value || 'PURCHASE';
-  $('#panelPurchase')?.classList.toggle('hidden', txn !== 'PURCHASE');
-  $('#panelRefi')?.classList.toggle('hidden', txn === 'PURCHASE');
-  setText($('#labelValue'), 'Property Value ($)');
-  setText($('#labelLoan'), 'Base Loan Amount ($)');
-}
-
-// ---------------- ZIP → State Tax & HOI Estimator ----------------
-// Uses zippopotam.us to get state by ZIP; applies state-level tax% to value;
-// HOI uses average at $300k coverage per state, scaled by value/300k.
-
-const STATE_TAX_RATE_2023_PCT = {
+/** ======= STATE TAX / HOI TABLES (2023 / 2022) =======
+ *  You can override these at runtime from Dev Config panel.
+ */
+let STATE_TAX_RATE_2023_PCT = {
   AL:0.375, AK:0.875, AZ:0.500, AR:0.500, CA:0.750, CO:0.500, CT:1.500, DE:0.500,
   FL:0.750, GA:0.750, HI:0.375, ID:0.500, IL:1.875, IN:0.750, IA:1.250, KS:1.250,
   KY:0.750, LA:0.500, ME:1.000, MD:0.875, MA:1.000, MI:1.125, MN:1.000, MS:0.625,
@@ -109,7 +35,8 @@ const STATE_TAX_RATE_2023_PCT = {
   SD:1.000, TN:0.500, TX:1.375, UT:0.500, VT:1.375, VA:0.750, WA:0.750, WV:0.500,
   WI:1.250, WY:0.500, DC:0.625
 };
-const HOI_2022 = {
+
+let HOI_2022 = {
   "Alabama":1748,"Alaska":1129,"Arizona":1018,"Arkansas":1740,"California":1492,"Colorado":2079,
   "Connecticut":1814,"Delaware":1103,"District of Columbia":1384,"Florida":2677,"Georgia":1655,
   "Hawaii":1431,"Idaho":1002,"Illinois":1343,"Indiana":1191,"Iowa":1268,"Kansas":1583,"Kentucky":1359,
@@ -120,425 +47,805 @@ const HOI_2022 = {
   "South Dakota":1756,"Tennessee":1492,"Texas":2397,"Utah":937,"Vermont":1109,"Virginia":1332,
   "Washington":1151,"West Virginia":1113,"Wisconsin":957,"Wyoming":1596
 };
+
 const HOI_BASE_COVERAGE = 300000;
 
-const zipCache = new Map();
-let zipTimer = null;
-let stateAbbr = 'AZ';
-let stateName = 'Arizona';
-let cityName = '';
+// Preserve baked-in copies for "Reset Overrides"
+const _DEFAULT_TAX_TABLE = JSON.parse(JSON.stringify(STATE_TAX_RATE_2023_PCT));
+const _DEFAULT_HOI_TABLE = JSON.parse(JSON.stringify(HOI_2022));
+const _DEFAULT_WS3       = WS3_BASE;
 
-async function fetchZipInfo(zip){
-  const z = normalizeZip5(zip);
+/** ======= UTILITIES ======= **/
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+function formatCurrency(num) {
+  if (!isFinite(num)) return '$0';
+  return num.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+}
+function parseCurrency(str) {
+  if (!str) return 0;
+  return Number(String(str).replace(/[^\d.-]/g, '')) || 0;
+}
+function formatPercent(num) {
+  if (!isFinite(num)) return '0%';
+  return `${(Math.round(num * 100) / 100).toString()}%`;
+}
+function parsePercent(str) {
+  if (!str) return 0;
+  let v = String(str).replace(/[^\d.-]/g, '');
+  return Number(v) || 0;
+}
+function roundToNearest(value, step) {
+  return Math.round(value / step) * step;
+}
+function mmdd_hhmm(date = new Date()) {
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+function normalizeZip(zip){
+  const digits = String(zip || "").replace(/\D/g, "");
+  return digits.length >= 5 ? digits.slice(0, 5) : "";
+}
+
+/** ======= STATE ======= **/
+const state = {
+  gated: false,
+  leadToken: localStorage.getItem(LS_TOKEN) || null,
+  leadEmail: localStorage.getItem(LS_EMAIL) || null,
+  devMode: false,
+  taxAuto: true,
+  insAuto: true,
+  inputs: {
+    program: 'CONV30',
+    txn: 'PURCHASE',
+    term: 360,
+    propZip: INITIAL_ZIP,
+    city: '',
+    stateAbbr: '',
+    stateName: '',
+    value: 500000,
+    ltv: 80,
+    loan: 400000,
+    fico: 740,
+    borrowerPts: 0.0,
+    taxes: 0,
+    ins: 0,
+    hoa: 0,
+    pmiToggle: true,
+    dtiOver45: false,
+    twoPlusBorrowers: false,
+    financeUfmip: true,
+    annualMip: 0.55,
+    vaExempt: false,
+    vaFirstUse: true,
+    dscrRatio: 1.25
+  },
+  lastQuote: null,
+  lastQuotedAt: null,
+  zipIsValidNew: false
+};
+
+/** ======= ELEMENTS ======= **/
+const el = {
+  lastQuoted: $('#lastQuoted'),
+  statusTop: $('#statusTop'),
+  statusBottom: $('#statusBottom'),
+
+  // Dev
+  devConfig: $('#devConfig'),
+  devModeGroup: $('#devModeGroup'),
+  ws3BaseInput: $('#ws3BaseInput'),
+  tablesJson: $('#tablesJson'),
+  applyConfigBtn: $('#applyConfigBtn'),
+  resetConfigBtn: $('#resetConfigBtn'),
+  devStatus: $('#devStatus'),
+
+  program: $('#program'),
+  txnGroup: $('#txnGroup'),
+  termGroup: $('#termGroup'),
+
+  propZip: $('#propZip'),
+  cityState: $('#cityState'),
+  gateBtn: $('#gateBtn'),
+  zipMsg: $('#zipMsg'),
+
+  propValue: $('#propValue'),
+  ltvPct: $('#ltvPct'),
+  loanAmt: $('#loanAmt'),
+
+  fico: $('#fico'),
+  ficoNum: $('#ficoNum'),
+  points: $('#points'),
+  pointsNum: $('#pointsNum'),
+
+  pmiToggle: $('#pmiToggle'),
+  dti45: $('#dti45'),
+  twoBorrowers: $('#twoBorrowers'),
+
+  taxes: $('#taxes'),
+  ins: $('#ins'),
+  hoa: $('#hoa'),
+  taxAutoChip: $('#taxAutoChip'),
+  insAutoChip: $('#insAutoChip'),
+
+  panelFHA: $('#panelFHA'),
+  financeUfmip: $('#financeUfmip'),
+  annualMip: $('#annualMip'),
+
+  panelVA: $('#panelVA'),
+  vaExempt: $('#vaExempt'),
+  vaFirstUse: $('#vaFirstUse'),
+
+  panelDSCR: $('#panelDSCR'),
+  dscrRatio: $('#dscrRatio'),
+
+  results: $('#results'),
+  saveQuoteBtn: $('#saveQuoteBtn'),
+
+  leadModal: $('#leadModal'),
+  leadForm: $('#leadForm'),
+  statusLead: $('#statusLead'),
+  cancelLead: $('#cancelLead'),
+  textUpdates: $('#textUpdates'),
+
+  email: $('#email'),
+};
+
+/** ======= ZIP → City/State + Estimation ======= **/
+const zipCache = new Map();
+
+async function resolveZip(zip) {
+  const z = normalizeZip(zip);
   if (!z) return null;
   if (zipCache.has(z)) return zipCache.get(z);
-  try{
-    const res = await fetch(`https://api.zippopotam.us/us/${z}`, { cache:"no-store" });
-    if (!res.ok) return null;
-    const data = await res.json();
+
+  try {
+    const resp = await fetch(`https://api.zippopotam.us/us/${z}`, { cache: 'no-store' });
+    if (!resp.ok) return null;
+    const data = await resp.json();
     const place = data?.places?.[0];
-    const abbr = place?.["state abbreviation"] || null;
-    const state = place?.["state"] || null;
-    const city = place?.["place name"] || null;
+    const abbr = place?.['state abbreviation'] || null;
+    const state = place?.['state'] || null;
+    const city = place?.['place name'] || '';
     if (!abbr || !state) return null;
-    const info = { abbr, state, city: city || "" };
+    const info = { abbr, state, city };
     zipCache.set(z, info);
     return info;
-  }catch{
+  } catch {
     return null;
   }
 }
 
 function estimateAnnualTaxes(value, ratePct){
   const v = Number(value), r = Number(ratePct);
-  if (!Number.isFinite(v) || v <= 0 || !Number.isFinite(r) || r <= 0) return 0;
-  return v * (r/100);
+  if (!isFinite(v) || v <= 0 || !isFinite(r) || r <= 0) return 0;
+  return v * (r / 100);
 }
-function clamp(n, lo, hi){ n = Number(n); if (!isFinite(n)) return lo; return Math.max(lo, Math.min(hi, n)); }
-function computeDefaultHOI(value){
-  const v = clamp(value, 0, 1e12);
-  const base = HOI_2022[stateName] ?? HOI_2022["Arizona"] ?? 0;
-  if (!base || !v) return 0;
+
+function computeDefaultHOI(value, stateName){
+  const v = Number(value);
+  if (!isFinite(v) || v <= 0) return 0;
+  const base = HOI_2022[stateName] ?? HOI_2022['Arizona'] ?? 0;
+  if (!base) return 0;
   const scaled = base * (v / HOI_BASE_COVERAGE);
-  return Math.round(scaled / 25) * 25;
+  return roundToNearest(scaled, 25);
 }
-function applyTaxDefault(){
-  const auto = $('#autoEscrowsToggle'); if (auto && !auto.checked) return;
-  const rate = STATE_TAX_RATE_2023_PCT[stateAbbr] ?? STATE_TAX_RATE_2023_PCT["AZ"];
-  const value = getNumber($('#value'), 0);
-  if (!rate || !value) return;
-  setNumber($('#taxes'), Math.round(estimateAnnualTaxes(value, rate)));
-}
-function applyInsDefault(){
-  const auto = $('#autoEscrowsToggle'); if (auto && !auto.checked) return;
-  const value = getNumber($('#value'), 0);
-  setNumber($('#ins'), computeDefaultHOI(value));
-}
+
 function setZipMsg(type, text){
-  const el = $('#zipMsg'); if (!el) return;
-  el.textContent = text || '';
-}
-
-function onZipInput(){
-  clearTimeout(zipTimer);
-  zipTimer = setTimeout(async () => {
-    const zip = normalizeZip5($('#propZip')?.value || '');
-    if (!zip){
-      stateAbbr = 'AZ'; stateName = 'Arizona'; cityName = '';
-      setZipMsg('ok', '');
-      applyTaxDefault(); applyInsDefault();
-      return;
-    }
-    const info = await fetchZipInfo(zip);
-    if (!info){ setZipMsg('warn', 'Could not find Property ZIP. Try another ZIP.'); return; }
-    stateAbbr = info.abbr; stateName = info.state; cityName = info.city || '';
-    setZipMsg('ok', `${cityName ? cityName + ', ' : ''}${stateName}`);
-    applyTaxDefault(); applyInsDefault();
-    if (hasLeadToken()) debouncedPrice();
-  }, 300);
-}
-
-// ---------------- API Helpers (diagnostic-friendly) ----------------
-async function postTextJson(url, bodyObj) {
-  let res, text;
-  try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(bodyObj),
-    });
-  } catch (netErr) {
-    setStatus(`Network error: ${netErr.message}`, true);
-    throw netErr;
-  }
-
-  text = await res.text();
-  if (!res.ok) {
-    const snippet = text.slice(0, 200);
-    const action = new URL(url).searchParams.get('action') || 'call';
-    const msg = `HTTP ${res.status} on ${action} — ${snippet}`;
-    setStatus(msg, true);
-    console.error('API error', { url, status: res.status, body: text });
-    throw new Error(msg);
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    const action = new URL(url).searchParams.get('action') || 'call';
-    const msg = `Unexpected non‑JSON response for ${action}`;
-    setStatus(msg, true);
-    console.error('Parse error', { url, text });
-    throw e;
-  }
-}
-
-async function callPrice(inputs, leadToken) {
-  const url = `${CONFIG.pricingBase}?action=price`;
-  const body = { payload: { inputs, ...(leadToken ? { leadToken } : {}) } };
-  console.debug('→ price payload', body);
-  return postTextJson(url, body);
-}
-async function callUpsertLead(leadFields) {
-  const url = `${CONFIG.leadsBase}?action=upsertLead`;
-  const body = { payload: leadFields };
-  console.debug('→ upsertLead payload', body);
-  return postTextJson(url, body);
-}
-async function callSaveQuote(savePayload) {
-  const url = `${CONFIG.leadsBase}?action=saveQuote`;
-  console.debug('→ saveQuote payload', savePayload);
-  return postTextJson(url, { payload: savePayload });
-}
-
-// ---------------- Inputs & Program Panels ----------------
-function gatherInputs() {
-  const program = $('#program')?.value || 'CONV30';
-  const txn = $('#txn')?.value || 'PURCHASE';
-  const termMonths = getNumber($('#termYears'), 30) * 12;
-
-  const value = getNumber($('#value'), 0);
-  const loan = getNumber($('#loan'), 0);
-  const ltvEl = $('#ltv');
-  const ltv = ltvEl ? getNumber(ltvEl, (value > 0 ? (loan / value) * 100 : 0)) : (value > 0 ? (loan / value) * 100 : 0);
-
-  const base = {
-    program,
-    txn,
-    term: termMonths,
-    loan,
-    ltv: Math.round(ltv * 100) / 100,
-    fico: getNumber($('#fico'), 740),
-    borrowerPts: getNumber($('#borrowerPts'), 0),
-    taxes: getNumber($('#taxes'), 0),
-    ins: getNumber($('#ins'), 0),
-    hoa: getNumber($('#hoa'), 0),
-  };
-
-  if (program === 'CONV30') {
-    base.pmiToggle = $('#pmiToggle')?.checked ?? true;
-    base.dtiOver45 = $('#dtiOver45')?.checked ?? false;
-    base.twoPlusBorrowers = $('#twoPlusBorrowers')?.checked ?? false;
-  } else if (program === 'FHA30') {
-    base.financeUfmip = $('#financeUfmip')?.checked ?? true;
-    base.annualMip = getNumber($('#annualMip'), 0.55);
-  } else if (program === 'VA30') {
-    base.vaExempt = $('#vaExempt')?.checked ?? false;
-    base.vaFirstUse = $('#vaFirstUse')?.checked ?? true;
-  } else if (program === 'DSCR30') {
-    base.dscrRatio = getNumber($('#dscrRatio'), 1.25);
-  }
-
-  return base;
-}
-
-function showProgramPanel(program) {
-  $('#panelCONV')?.classList.toggle('hidden', program !== 'CONV30');
-  $('#panelFHA')?.classList.toggle('hidden', program !== 'FHA30');
-  $('#panelVA')?.classList.toggle('hidden', program !== 'VA30');
-  $('#panelDSCR')?.classList.toggle('hidden', program !== 'DSCR30');
-}
-
-// ---------------- Rendering ----------------
-function renderResults(data, inputs) {
-  const el = $('#results'); if (!el) return;
-
-  if (!data || data.ok === false) {
-    el.innerHTML = `<div class="placeholder">No results. ${data?.message || ''}</div>`;
+  if (!el.zipMsg) return;
+  if (!text){
+    el.zipMsg.style.display = 'none';
+    el.zipMsg.textContent = '';
+    el.zipMsg.className = 'msg';
     return;
   }
-  const { noteRate, parRate, totalLoan, piMonthly, miMonthly, totalPayment, breakdown } = data;
-
-  const programLabel = ({
-    CONV30: 'Conventional 30‑Year',
-    FHA30: 'FHA 30‑Year',
-    VA30: 'VA 30‑Year',
-    DSCR30: 'DSCR 30‑Year',
-  })[inputs.program] || inputs.program;
-
-  el.innerHTML = `
-    <div class="grid two-col">
-      <div>
-        <h3>${programLabel}</h3>
-        <div>Txn: <strong>${inputs.txn}</strong></div>
-        <div>Loan: <strong>${fmtMoney(inputs.loan)}</strong></div>
-        <div>LTV: <strong>${(inputs.ltv || 0).toFixed(2)}%</strong></div>
-        <div>FICO: <strong>${inputs.fico}</strong></div>
-        <div>Borrower Pts: <strong>${inputs.borrowerPts.toFixed(3)}%</strong></div>
-      </div>
-      <div>
-        <div>Par Rate: <strong>${parRate != null ? Number(parRate).toFixed(3) + '%' : '—'}</strong></div>
-        <div>Note Rate: <strong>${noteRate != null ? Number(noteRate).toFixed(3) + '%' : '—'}</strong></div>
-        <div>Total Loan: <strong>${fmtMoney(totalLoan)}</strong></div>
-        <div>PI: <strong>${fmtMoney(piMonthly)}</strong></div>
-        <div>MI: <strong>${fmtMoney(miMonthly)}</strong></div>
-        <div>Total Pmt: <strong>${fmtMoney(totalPayment)}</strong></div>
-      </div>
-    </div>
-    ${breakdown ? `<div style="margin-top:12px;"><h3>Breakdown</h3><pre style="white-space:pre-wrap;">${JSON.stringify(breakdown, null, 2)}</pre></div>` : ''}
-  `;
+  el.zipMsg.className = 'msg ' + (type === 'warn' ? 'bad' : 'ok');
+  el.zipMsg.textContent = text;
+  el.zipMsg.style.display = 'block';
 }
-function renderLastQuotedAt() { $('#lastQuoted') && ($('#lastQuoted').textContent = `Last quoted at ${nowStampMMDD_HHMM()}`); }
 
-// ---------------- Lead Gate (NO ZIP in modal) ----------------
+async function onZipChanged() {
+  const zipRaw = el.propZip.value;
+  const zip = normalizeZip(zipRaw);
+  if (zipRaw !== zip) el.propZip.value = zip; // normalize UI
+  const isFive = /^\d{5}$/.test(zip);
+  const isChanged = zip !== INITIAL_ZIP;
+  state.zipIsValidNew = isFive && isChanged;
+
+  state.inputs.propZip = zip;
+  el.propZip.classList.toggle('needs-update', !state.zipIsValidNew);
+  el.gateBtn.disabled = !state.zipIsValidNew;
+
+  if (!zip) {
+    state.inputs.city = '';
+    state.inputs.stateAbbr = 'AZ';
+    state.inputs.stateName = 'Arizona';
+    el.cityState.textContent = '—';
+    setZipMsg('', '');
+    applyTaxDefault();
+    applyInsDefault();
+    return;
+  }
+
+  const info = await resolveZip(zip);
+  if (!info){
+    setZipMsg('warn', 'Could not find Property Zip. Try another ZIP.');
+    el.cityState.textContent = '—';
+    return;
+  }
+
+  state.inputs.city = info.city || '';
+  state.inputs.stateAbbr = info.abbr;
+  state.inputs.stateName = info.state || '';
+  el.cityState.textContent = `${state.inputs.city ? state.inputs.city + ', ' : ''}${state.inputs.stateName}`;
+  setZipMsg('ok', el.cityState.textContent);
+
+  applyTaxDefault();
+  applyInsDefault();
+}
+
+/** ======= Loan Sync (Value/LTV/Loan) ======= **/
+function syncFromValue() {
+  const value = parseCurrency(el.propValue.value);
+  state.inputs.value = value;
+  const loan = Math.round(value * (state.inputs.ltv / 100));
+  state.inputs.loan = loan;
+  el.loanAmt.value = formatCurrency(loan);
+
+  applyTaxDefault();
+  applyInsDefault();
+
+  scheduleReprice();
+}
+
+function syncFromLtv() {
+  const ltv = parsePercent(el.ltvPct.value);
+  state.inputs.ltv = ltv;
+  const loan = Math.round(state.inputs.value * (ltv / 100));
+  state.inputs.loan = loan;
+  el.loanAmt.value = formatCurrency(loan);
+  scheduleReprice();
+}
+
+function syncFromLoan() {
+  const loan = parseCurrency(el.loanAmt.value);
+  state.inputs.loan = loan;
+  const ltv = state.inputs.value > 0 ? (loan / state.inputs.value) * 100 : 0;
+  state.inputs.ltv = Math.max(0, Math.min(100, ltv));
+  el.ltvPct.value = formatPercent(state.inputs.ltv);
+  scheduleReprice();
+}
+
+/** ======= Program Panel Visibility ======= **/
+function updateProgramPanels() {
+  const p = state.inputs.program;
+  el.panelFHA.hidden = !(p.startsWith('FHA'));
+  el.panelVA.hidden = !(p.startsWith('VA'));
+  el.panelDSCR.hidden = !(p.startsWith('DSCR'));
+}
+
+/** ======= Lead Gate Modal ======= **/
 function openLeadModal() {
-  const dlg = $('#leadModal');
-  if (!dlg) return;
-  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.classList.remove('hidden');
+  el.leadModal.classList.remove('hidden');
+  el.leadModal.setAttribute('aria-hidden', 'false');
 }
 function closeLeadModal() {
-  const dlg = $('#leadModal'); if (!dlg) return;
-  if (typeof dlg.close === 'function') dlg.close();
-  dlg.classList.add('hidden');
+  el.leadModal.classList.add('hidden');
+  el.leadModal.setAttribute('aria-hidden', 'true');
 }
 
-async function handleLeadSubmit(e) {
-  e.preventDefault();
-  const status = $('#leadStatus');
-  if (status) { status.textContent = 'Creating lead…'; status.style.color = 'var(--muted)'; }
+async function handleLeadSubmit(evt) {
+  evt.preventDefault();
+  el.statusLead.textContent = '';
 
-  const first = $('#leadFirst')?.value.trim();
-  const last  = $('#leadLast')?.value.trim();
-  const email = $('#leadEmail')?.value.trim();
-  const phone = $('#leadPhone')?.value.trim();
-  const timeline = $('#leadTimeline')?.value || '';
-  const textOk = $('#leadTextOK')?.value || '';
+  if (!WS3_BASE) {
+    el.statusLead.textContent = 'Configure WS‑3 base URL to enable upsertLead.';
+    return;
+  }
 
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { status.textContent = 'Please enter a valid email.'; status.style.color = '#ef4444'; return; }
-
-  // Property ZIP is now required in the main form, not here.
-  const zip5 = normalizeZip5($('#propZip')?.value || '');
+  const payload = {
+    firstName: $('#firstName').value.trim(),
+    lastName: $('#lastName').value.trim(),
+    phone: $('#phone').value.trim(),
+    email: $('#email').value.trim(),
+    timeline: $('#timeline').value,
+    textUpdates: activeBool(el.textUpdates),
+    source: 'UI-W4'
+  };
 
   try {
-    const leadFields = {
-      'Primary Borrower Name': [first, last].filter(Boolean).join(' ').trim(),
-      'Primary Borrower Email': email,
-      'Primary Borrower Phone': phone || '',
-      'Lead Timeline': timeline,
-      'Text Updates OK': textOk,
-      'Source': 'UI-W4',
-      // Attach ZIP only if present
-      ...(zip5 ? { 'Subject ZIP': zip5 } : {}),
-    };
-    const res = await callUpsertLead(leadFields);
-    if (!res || !res.ok || !res.leadToken) throw new Error(res?.message || 'Unexpected lead response.');
+    const resp = await fetch(WS3_UPSERT(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ payload })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok || !data.leadToken) {
+      throw new Error(JSON.stringify(data || { error: 'upsertLead failed' }));
+    }
+    // Persist
+    state.leadToken = data.leadToken;
+    localStorage.setItem(LS_TOKEN, state.leadToken);
+    localStorage.setItem(LS_EMAIL, payload.email);
+    state.gated = true;
 
-    localStorage.setItem(LS_KEYS.leadToken, res.leadToken);
-    localStorage.setItem(LS_KEYS.leadEmail, email);
-
-    $('#btnCalculate') && ($('#btnCalculate').disabled = false);
-    $('#btnSave') && ($('#btnSave').disabled = false);
-
-    status.textContent = 'Lead created. Loading your pricing…';
     closeLeadModal();
-
-    await doPrice(); // immediate first price
+    el.statusTop.textContent = 'Lead captured. Fetching your pricing…';
+    await priceNow(); // immediate first price
   } catch (err) {
-    console.error(err);
-    status.textContent = `Lead error: ${err.message || err}`;
-    status.style.color = '#ef4444';
+    el.statusLead.textContent = `Lead error: ${err.message || err}`;
   }
 }
 
-// ---------------- Pricing & Save ----------------
-async function doPrice() {
-  const leadToken = localStorage.getItem(LS_KEYS.leadToken);
-  if (!leadToken) { setStatus('Please submit the lead form to unlock pricing.', true); return; }
+/** ======= Helpers for pill groups ======= **/
+function wirePillGroup(container, onChange) {
+  container.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pill');
+    if (!btn) return;
+    $$('.pill', container).forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    onChange(btn.dataset.value);
+  });
+}
+function activeValue(container) {
+  const btn = container.querySelector('.pill.active');
+  return btn ? btn.dataset.value : undefined;
+}
+function activeBool(container) {
+  return activeValue(container) === 'true';
+}
 
-  const inputs = gatherInputs();
-  if (inputs.loan <= 0 || inputs.fico < 300) { setStatus('Please check your loan amount and FICO.', true); return; }
+/** ======= Pricing ======= **/
+const scheduleReprice = debounce(() => {
+  if (!state.gated) return; // only after lead captured
+  priceNow();
+}, REPRICE_DEBOUNCE_MS);
 
-  setStatus('Pricing…'); toggleLoading(true);
+function buildInputsPayload() {
+  const i = state.inputs;
+  return {
+    program: i.program,
+    txn: i.txn,
+    term: Number(i.term),
+    loan: Math.round(i.loan),
+    ltv: Math.round(i.ltv * 100) / 100,
+    fico: Number(i.fico),
+    borrowerPts: Number(i.borrowerPts),
+    taxes: Math.round(i.taxes),
+    ins: Math.round(i.ins),
+    hoa: Math.round(i.hoa),
+    pmiToggle: Boolean(i.pmiToggle),
+    dtiOver45: Boolean(i.dtiOver45),
+    twoPlusBorrowers: Boolean(i.twoPlusBorrowers),
+    financeUfmip: Boolean(i.financeUfmip),
+    annualMip: Number(i.annualMip),
+    vaExempt: Boolean(i.vaExempt),
+    vaFirstUse: Boolean(i.vaFirstUse),
+    dscrRatio: Number(i.dscrRatio)
+  };
+}
+
+async function priceNow() {
+  el.statusTop.textContent = 'Pricing…';
+  el.statusBottom.textContent = '';
+  el.saveQuoteBtn.disabled = true;
+
+  const payload = {
+    inputs: buildInputsPayload(),
+    leadToken: state.leadToken || ''
+  };
+
   try {
-    const data = await callPrice(inputs, leadToken);
-    lastPriceResult = data;
-    renderResults(data, inputs);
-    renderLastQuotedAt();
-    setStatus('Done.');
+    const resp = await fetch(WS2_PRICE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ payload })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(`Pricing HTTP ${resp.status}`);
+    // Accept any shape; snapshot for saveQuote
+    state.lastQuote = data;
+    state.lastQuotedAt = new Date();
+    el.lastQuoted.textContent = `Last quoted: ${mmdd_hhmm(state.lastQuotedAt)}`;
+    renderResults(data);
+    el.saveQuoteBtn.disabled = !state.leadToken || !WS3_BASE;
+    el.statusTop.textContent = 'Pricing complete.';
   } catch (err) {
-    console.error(err);
-    setStatus(`Pricing failed: ${err.message || err}`, true);
-  } finally {
-    toggleLoading(false);
+    el.statusTop.textContent = `Pricing error: ${err.message || err}`;
+    renderResults({ error: err.message || String(err) });
   }
 }
-const debouncedPrice = debounce(doPrice, 350);
 
-async function doSaveQuote() {
-  const leadToken = localStorage.getItem(LS_KEYS.leadToken);
-  if (!leadToken) { setStatus('Lead token missing. Please submit the lead form.', true); return; }
-  const inputs = gatherInputs();
+/** ======= Save Quote ======= **/
+async function saveQuote() {
+  el.statusBottom.textContent = '';
+  if (!WS3_BASE) {
+    el.statusBottom.textContent = 'Configure WS‑3 base URL to enable saveQuote.';
+    return;
+  }
+  if (!state.leadToken) {
+    el.statusBottom.textContent = 'Missing leadToken; please complete the gate.';
+    return;
+  }
+  const payload = {
+    leadToken: state.leadToken,
+    inputs: buildInputsPayload(),
+    quote: state.lastQuote || {},
+    savedAt: mmdd_hhmm(new Date()),
+    source: 'UI-W4',
+    subjectZip: /^\d{5}$/.test(state.inputs.propZip) ? state.inputs.propZip : undefined
+  };
 
-  setStatus('Saving quote…'); toggleLoading(true);
   try {
-    const payload = {
-      leadToken,
-      inputs,
-      quote: lastPriceResult || null,
-      savedAt: nowStampMMDD_HHMM(),
-      source: 'UI-W4',
-      // Pass through address-ish context if you later add it:
-      subjectZip: normalizeZip5($('#propZip')?.value || '') || undefined,
-    };
-    const res = await callSaveQuote(payload);
-    console.debug('saveQuote response:', res);
-    if (!res) throw new Error('No response from saveQuote.');
-    if (res.ok === false) throw new Error(res.message || 'Save failed (ok:false).');
-    setStatus('Saved.');
+    const resp = await fetch(WS3_SAVE(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ payload })
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.ok !== true) {
+      throw new Error(data && (data.message || data.error) || `HTTP ${resp.status}`);
+    }
+    el.statusBottom.textContent = 'Quote saved successfully.';
   } catch (err) {
-    console.error(err);
-    setStatus(`Save failed: ${err.message || err}`, true);
-  } finally {
-    toggleLoading(false);
+    el.statusBottom.textContent = `saveQuote error: ${err.message || err}`;
   }
 }
 
-// ---------------- Sliders & ZIP hooks ----------------
-function hookSliders() {
-  const ficoSlider = $('#ficoSlider'), ficoNum = $('#fico');
-  if (ficoSlider && ficoNum) {
-    ficoSlider.value = String(getNumber(ficoNum, 740));
-    ficoSlider.addEventListener('input', () => { ficoNum.value = ficoSlider.value; if (hasLeadToken()) debouncedPrice(); });
-    ficoNum.addEventListener('input', () => { ficoSlider.value = ficoNum.value; if (hasLeadToken()) debouncedPrice(); });
+/** ======= Results Renderer (robust to unknown shapes) ======= **/
+function renderResults(data) {
+  const c = el.results;
+  c.innerHTML = '';
+  if (!data || typeof data !== 'object') {
+    c.innerHTML = `<div class="muted">No data.</div>`;
+    return;
   }
 
-  const ptsSlider = $('#pointsSlider'), ptsNum = $('#borrowerPts');
-  if (ptsSlider && ptsNum) {
-    const syncFromSlider = () => { ptsNum.value = Number(ptsSlider.value).toFixed(3); if (hasLeadToken()) debouncedPrice(); };
-    const syncFromNumber = () => { ptsSlider.value = String(Number(ptsNum.value || 0)); if (hasLeadToken()) debouncedPrice(); };
-    ptsSlider.addEventListener('input', syncFromSlider);
-    ptsNum.addEventListener('input', syncFromNumber);
-    syncFromNumber();
+  // Try to extract common elements, or fallback to pretty JSON
+  const summary = document.createElement('div');
+  summary.className = 'results-grid';
+
+  // Heuristics
+  const rate = data.rate || data.bestRate || data.noteRate || data?.pricing?.rate;
+  const apr = data.apr || data.APR || data?.pricing?.apr;
+  const payment = data.piti || data.payment || data?.pricing?.payment;
+  const price = data.price || data.points || data?.pricing?.price || state.inputs.borrowerPts;
+
+  // Cards
+  summary.appendChild(resultCard('Rate', rate ? `${Number(rate).toFixed(3)}%` : '—'));
+  summary.appendChild(resultCard('APR', apr ? `${Number(apr).toFixed(3)}%` : '—'));
+  summary.appendChild(resultCard('Points/Price', (price ?? '—').toString()));
+  summary.appendChild(resultCard('Est. Payment', payment ? formatCurrency(payment) : '—'));
+
+  c.appendChild(summary);
+
+  // Details
+  const details = document.createElement('pre');
+  details.className = 'json';
+  details.textContent = JSON.stringify(data, null, 2);
+  c.appendChild(details);
+}
+
+function resultCard(label, value) {
+  const d = document.createElement('div');
+  d.className = 'result-card';
+  d.innerHTML = `<div class="rc-label">${label}</div><div class="rc-value">${value}</div>`;
+  return d;
+}
+
+/** ======= Auto-estimate toggles ======= **/
+function applyTaxDefault(){
+  if (!state.taxAuto) return;
+  const abbr = state.inputs.stateAbbr || 'AZ';
+  const rate = STATE_TAX_RATE_2023_PCT[abbr] ?? STATE_TAX_RATE_2023_PCT['AZ'] ?? 0.5;
+  const taxes = Math.round(estimateAnnualTaxes(state.inputs.value, rate));
+  state.inputs.taxes = taxes;
+  el.taxes.value = formatCurrency(taxes);
+}
+
+function applyInsDefault(){
+  if (!state.insAuto) return;
+  const hoi = computeDefaultHOI(state.inputs.value, state.inputs.stateName || 'Arizona');
+  state.inputs.ins = hoi;
+  el.ins.value = formatCurrency(hoi);
+}
+
+function updateAutoChips() {
+  el.taxAutoChip.classList.toggle('active', state.taxAuto);
+  el.insAutoChip.classList.toggle('active', state.insAuto);
+}
+
+/** ======= Dev Panel ======= **/
+function isDevRequested() {
+  return (location.hostname === 'localhost') ||
+         (/[?&]dev=1\b/i.test(location.search)) ||
+         (localStorage.getItem(LS_DEV) === '1');
+}
+
+function showDevPanelIfNeeded() {
+  state.devMode = isDevRequested();
+  if (state.devMode) {
+    el.devConfig.style.display = '';
+    // Reflect dev mode pill
+    $$('.pill', el.devModeGroup).forEach(p => p.classList.remove('active'));
+    el.devModeGroup.querySelector('[data-value="on"]').classList.add('active');
+  } else {
+    el.devConfig.style.display = 'none';
+    $$('.pill', el.devModeGroup).forEach(p => p.classList.remove('active'));
+    el.devModeGroup.querySelector('[data-value="off"]').classList.add('active');
   }
+  // Preload current WS3 & any override JSON (compact)
+  el.ws3BaseInput.value = WS3_BASE || '';
+  el.tablesJson.value = '';
 }
 
-function initConfigUi() {
-  $('#cfgRatesUrl') && ($('#cfgRatesUrl').value = CONFIG.ratesUrl);
-  $('#cfgPricingUrl') && ($('#cfgPricingUrl').value = `${CONFIG.pricingBase}?action=price`);
-  $('#cfgLeadsUrl') && ($('#cfgLeadsUrl').value = `${CONFIG.leadsBase}?[upsertLead|saveQuote]`);
-  $('#cfgLlpaSheet') && ($('#cfgLlpaSheet').value = CONFIG.llpaSheetId);
-  $('#cfgLeadsSheet') && ($('#cfgLeadsSheet').value = CONFIG.leadsSheetId);
-
-  $('#versionChip') && ($('#versionChip').textContent = `${CONFIG.versions.ui} • ${CONFIG.versions.pricing} • ${CONFIG.versions.rates}`);
-  $('#footerVersion') && ($('#footerVersion').textContent = CONFIG.versions.ui);
+function applyDevConfig() {
+  const newWs3 = el.ws3BaseInput.value.trim();
+  if (newWs3) {
+    WS3_BASE = newWs3;
+    localStorage.setItem(LS_WS3, WS3_BASE);
+  }
+  const txt = el.tablesJson.value.trim();
+  if (txt) {
+    try {
+      const obj = JSON.parse(txt);
+      // Accept combined or single objects
+      if (obj.STATE_TAX_RATE_2023_PCT && typeof obj.STATE_TAX_RATE_2023_PCT === 'object') {
+        STATE_TAX_RATE_2023_PCT = obj.STATE_TAX_RATE_2023_PCT;
+        localStorage.setItem(LS_TAX, JSON.stringify(STATE_TAX_RATE_2023_PCT));
+      } else if (!obj.HOI_2022 && !obj.STATE_TAX_RATE_2023_PCT) {
+        // Try to infer if this looks like the tax map (keys are 2-letter states)
+        const keys = Object.keys(obj);
+        const isTax = keys.every(k => /^[A-Z]{2}$/.test(k));
+        if (isTax) {
+          STATE_TAX_RATE_2023_PCT = obj;
+          localStorage.setItem(LS_TAX, JSON.stringify(STATE_TAX_RATE_2023_PCT));
+        }
+      }
+      if (obj.HOI_2022 && typeof obj.HOI_2022 === 'object') {
+        HOI_2022 = obj.HOI_2022;
+        localStorage.setItem(LS_HOI, JSON.stringify(HOI_2022));
+      } else if (!obj.HOI_2022 && !obj.STATE_TAX_RATE_2023_PCT) {
+        // Try to infer HOI (keys likely full state names)
+        const keys = Object.keys(obj);
+        const looksLikeHoi = keys.some(k => k.length > 2 && /[a-z]/i.test(k));
+        if (looksLikeHoi) {
+          HOI_2022 = obj;
+          localStorage.setItem(LS_HOI, JSON.stringify(HOI_2022));
+        }
+      }
+      el.devStatus.textContent = 'Config applied.';
+    } catch (e) {
+      el.devStatus.textContent = `JSON parse error: ${e.message}`;
+    }
+  } else {
+    el.devStatus.textContent = 'Config applied.';
+  }
+  // Re-run estimations with potentially updated tables
+  applyTaxDefault();
+  applyInsDefault();
 }
 
-function initEvents() {
-  // Program/Txn panels
-  $('#program')?.addEventListener('change', (e) => { showProgramPanel(e.target.value); if (hasLeadToken()) debouncedPrice(); });
-  $('#txn')?.addEventListener('change', () => { updateTxnPanels(); if (hasLeadToken()) debouncedPrice(); });
+function resetDevConfig() {
+  WS3_BASE = _DEFAULT_WS3;
+  STATE_TAX_RATE_2023_PCT = JSON.parse(JSON.stringify(_DEFAULT_TAX_TABLE));
+  HOI_2022 = JSON.parse(JSON.stringify(_DEFAULT_HOI_TABLE));
+  localStorage.removeItem(LS_WS3);
+  localStorage.removeItem(LS_TAX);
+  localStorage.removeItem(LS_HOI);
+  el.ws3BaseInput.value = WS3_BASE;
+  el.tablesJson.value = '';
+  el.devStatus.textContent = 'Overrides cleared.';
+  applyTaxDefault();
+  applyInsDefault();
+}
 
-  // Core inputs auto-reprice when gated + sync trio + ZIP estimates
-  [
-    '#termYears', '#loan', '#value', '#ltv', '#fico', '#borrowerPts', '#taxes', '#ins', '#hoa',
-    '#pmiToggle', '#dtiOver45', '#twoPlusBorrowers',
-    '#financeUfmip', '#annualMip',
-    '#vaExempt', '#vaFirstUse',
-    '#dscrRatio',
-    '#propZip', '#downPct', '#equityPct'
-  ].forEach((sel) => {
-    const el = $(sel); if (!el) return;
-    const source = sel.replace('#', '');
-    el.addEventListener('input', () => {
-      if (['value','loan','ltv','downPct','equityPct'].includes(source)) syncTrioFrom(source);
-      if (source === 'propZip' || source === 'value') onZipInput();
-      if (hasLeadToken()) debouncedPrice();
-    });
-    el.addEventListener('change', () => {
-      if (['value','loan','ltv','downPct','equityPct'].includes(source)) syncTrioFrom(source);
-      if (source === 'propZip' || source === 'value') onZipInput();
-      if (hasLeadToken()) debouncedPrice();
-    });
+/** ======= Event Wiring ======= **/
+function init() {
+  // Load dev overrides from localStorage
+  const savedWs3 = localStorage.getItem(LS_WS3);
+  if (savedWs3) WS3_BASE = savedWs3;
+
+  const savedTax = localStorage.getItem(LS_TAX);
+  if (savedTax) {
+    try { STATE_TAX_RATE_2023_PCT = JSON.parse(savedTax); } catch {}
+  }
+  const savedHoi = localStorage.getItem(LS_HOI);
+  if (savedHoi) {
+    try { HOI_2022 = JSON.parse(savedHoi); } catch {}
+  }
+
+  showDevPanelIfNeeded();
+
+  // Dev panel wiring
+  wirePillGroup(el.devModeGroup, (v) => {
+    if (v === 'on') {
+      localStorage.setItem(LS_DEV, '1');
+    } else {
+      localStorage.removeItem(LS_DEV);
+    }
+    showDevPanelIfNeeded();
+  });
+  el.applyConfigBtn.addEventListener('click', applyDevConfig);
+  el.resetConfigBtn.addEventListener('click', resetDevConfig);
+
+  // Program / Txn / Term
+  el.program.addEventListener('change', (e) => {
+    state.inputs.program = e.target.value;
+    updateProgramPanels();
+    scheduleReprice();
   });
 
-  // Gate + actions
-  $('#btnGetResults')?.addEventListener('click', openLeadModal);
-  $('#btnCalculate')?.addEventListener('click', doPrice);
-  $('#btnSave')?.addEventListener('click', doSaveQuote);
+  wirePillGroup(el.txnGroup, (v) => {
+    state.inputs.txn = v;
+    scheduleReprice();
+  });
+  wirePillGroup(el.termGroup, (v) => {
+    state.inputs.term = Number(v);
+    scheduleReprice();
+  });
+
+  // ZIP gating
+  el.propZip.addEventListener('input', onZipChanged);
+  onZipChanged(); // initialize state/city/estimates
+
+  el.gateBtn.addEventListener('click', () => {
+    if (state.leadToken) {
+      // If returning user, allow quick reprice
+      priceNow();
+    } else {
+      openLeadModal();
+    }
+  });
+
+  // Loan structure
+  el.propValue.addEventListener('blur', () => {
+    el.propValue.value = formatCurrency(parseCurrency(el.propValue.value));
+    syncFromValue();
+  });
+  el.ltvPct.addEventListener('blur', () => {
+    el.ltvPct.value = formatPercent(parsePercent(el.ltvPct.value));
+    syncFromLtv();
+  });
+  el.loanAmt.addEventListener('blur', () => {
+    el.loanAmt.value = formatCurrency(parseCurrency(el.loanAmt.value));
+    syncFromLoan();
+  });
+
+  // Credit & Points
+  el.fico.addEventListener('input', () => {
+    el.ficoNum.value = el.fico.value;
+    state.inputs.fico = Number(el.fico.value);
+    scheduleReprice();
+  });
+  el.ficoNum.addEventListener('change', () => {
+    let v = Math.max(300, Math.min(850, Number(el.ficoNum.value || 740)));
+    el.fico.value = String(v);
+    state.inputs.fico = v;
+    scheduleReprice();
+  });
+  el.points.addEventListener('input', () => {
+    el.pointsNum.value = el.points.value;
+    state.inputs.borrowerPts = Number(el.points.value);
+    scheduleReprice();
+  });
+  el.pointsNum.addEventListener('change', () => {
+    let v = Math.max(-5, Math.min(5, Number(el.pointsNum.value || 0)));
+    el.points.value = String(v);
+    state.inputs.borrowerPts = v;
+    scheduleReprice();
+  });
+
+  // Toggle groups
+  wirePillGroup(el.pmiToggle, (v) => {
+    state.inputs.pmiToggle = v === 'true';
+    scheduleReprice();
+  });
+  wirePillGroup(el.dti45, (v) => {
+    state.inputs.dtiOver45 = v === 'true';
+    scheduleReprice();
+  });
+  wirePillGroup(el.twoBorrowers, (v) => {
+    state.inputs.twoPlusBorrowers = v === 'true';
+    scheduleReprice();
+  });
+
+  // Taxes/HOI/HOA manual override and Auto toggles
+  el.taxes.addEventListener('blur', () => {
+    state.inputs.taxes = parseCurrency(el.taxes.value);
+    el.taxes.value = formatCurrency(state.inputs.taxes);
+    state.taxAuto = false;
+    updateAutoChips();
+    scheduleReprice();
+  });
+  el.ins.addEventListener('blur', () => {
+    state.inputs.ins = parseCurrency(el.ins.value);
+    el.ins.value = formatCurrency(state.inputs.ins);
+    state.insAuto = false;
+    updateAutoChips();
+    scheduleReprice();
+  });
+  el.hoa.addEventListener('blur', () => {
+    state.inputs.hoa = parseCurrency(el.hoa.value);
+    el.hoa.value = formatCurrency(state.inputs.hoa);
+    scheduleReprice();
+  });
+  el.taxAutoChip.addEventListener('click', () => {
+    state.taxAuto = !state.taxAuto;
+    updateAutoChips();
+    applyTaxDefault();
+    scheduleReprice();
+  });
+  el.insAutoChip.addEventListener('click', () => {
+    state.insAuto = !state.insAuto;
+    updateAutoChips();
+    applyInsDefault();
+    scheduleReprice();
+  });
+
+  // Program-specific controls
+  wirePillGroup(el.financeUfmip, (v) => {
+    state.inputs.financeUfmip = v === 'true';
+    scheduleReprice();
+  });
+  el.annualMip.addEventListener('change', () => {
+    state.inputs.annualMip = Number(el.annualMip.value || 0.55);
+    scheduleReprice();
+  });
+
+  wirePillGroup(el.vaExempt, (v) => {
+    state.inputs.vaExempt = v === 'true';
+    scheduleReprice();
+  });
+  wirePillGroup(el.vaFirstUse, (v) => {
+    state.inputs.vaFirstUse = v === 'true';
+    scheduleReprice();
+  });
+
+  el.dscrRatio.addEventListener('change', () => {
+    state.inputs.dscrRatio = Number(el.dscrRatio.value || 1.25);
+    scheduleReprice();
+  });
 
   // Lead modal
-  $('#leadForm')?.addEventListener('submit', handleLeadSubmit);
-  $('#leadCancel')?.addEventListener('click', closeLeadModal);
+  el.leadForm.addEventListener('submit', handleLeadSubmit);
+  el.cancelLead.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeLeadModal();
+  });
 
-  // Sliders
-  hookSliders();
+  // Save quote
+  el.saveQuoteBtn.addEventListener('click', saveQuote);
 
-  // Returning user
-  if (hasLeadToken()) {
-    $('#btnCalculate') && ($('#btnCalculate').disabled = false);
-    $('#btnSave') && ($('#btnSave').disabled = false);
-    setStatus('Welcome back! Re‑pricing with your current inputs…');
-    doPrice();
+  // Restore last email if present
+  if (state.leadEmail) {
+    el.email.value = state.leadEmail;
   }
 
-  updateTxnPanels(); // init labels/panels
+  // Initialize formatted inputs and chips
+  el.propValue.value = formatCurrency(state.inputs.value);
+  el.ltvPct.value = formatPercent(state.inputs.ltv);
+  el.loanAmt.value = formatCurrency(state.inputs.loan);
+  updateProgramPanels();
+  updateAutoChips();
+
+  // If we already have a token (return visitor), consider the user gated
+  if (state.leadToken) {
+    state.gated = true;
+    el.gateBtn.textContent = 'Reprice Now';
+    el.gateBtn.disabled = false;
+  }
 }
 
-// ---------------- Boot ----------------
-window.addEventListener('DOMContentLoaded', () => {
-  console.log('W4 UI booting…');
-  initConfigUi();
-  initEvents();
-  showProgramPanel($('#program')?.value || 'CONV30');
-  // preloadRates(); // disabled (avoid WS‑1 CORS noise)
-});
+document.addEventListener('DOMContentLoaded', init);
