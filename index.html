@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <title>AZM — Lead‑Gated Mortgage Calculator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- CSS -->
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -84,8 +85,8 @@
           </div>
 
           <div class="field">
-            <label for="propZip">Property ZIP</label>
-            <input id="propZip" type="text" inputmode="numeric" maxlength="10" placeholder="#####"/>
+            <label for="propZip">Property ZIP <span class="muted">(required for taxes/HOI)</span></label>
+            <input id="propZip" type="text" inputmode="numeric" maxlength="10" placeholder="#####" required />
             <label class="checkbox" style="margin-top:6px;">
               <input id="autoEscrowsToggle" type="checkbox" checked />
               Auto‑estimate taxes & HOI from ZIP & value
@@ -146,28 +147,16 @@
         <div id="panelCONV" class="program-panel">
           <h3>Conventional Options</h3>
           <div class="grid three-col">
-            <label class="checkbox">
-              <input id="pmiToggle" type="checkbox" checked />
-              PMI enabled
-            </label>
-            <label class="checkbox">
-              <input id="dtiOver45" type="checkbox" />
-              DTI &gt; 45%
-            </label>
-            <label class="checkbox">
-              <input id="twoPlusBorrowers" type="checkbox" />
-              2+ Borrowers
-            </label>
+            <label class="checkbox"><input id="pmiToggle" type="checkbox" checked /> PMI enabled</label>
+            <label class="checkbox"><input id="dtiOver45" type="checkbox" /> DTI &gt; 45%</label>
+            <label class="checkbox"><input id="twoPlusBorrowers" type="checkbox" /> 2+ Borrowers</label>
           </div>
         </div>
 
         <div id="panelFHA" class="program-panel hidden">
           <h3>FHA Options</h3>
           <div class="grid two-col">
-            <label class="checkbox">
-              <input id="financeUfmip" type="checkbox" checked />
-              Finance UFMIP
-            </label>
+            <label class="checkbox"><input id="financeUfmip" type="checkbox" checked /> Finance UFMIP</label>
             <div class="field">
               <label for="annualMip">Annual MIP (%)</label>
               <input id="annualMip" type="number" min="0" max="2" step="0.01" value="0.55" />
@@ -178,14 +167,8 @@
         <div id="panelVA" class="program-panel hidden">
           <h3>VA Options</h3>
           <div class="grid two-col">
-            <label class="checkbox">
-              <input id="vaExempt" type="checkbox" />
-              Funding Fee Exempt
-            </label>
-            <label class="checkbox">
-              <input id="vaFirstUse" type="checkbox" checked />
-              First Use
-            </label>
+            <label class="checkbox"><input id="vaExempt" type="checkbox" /> Funding Fee Exempt</label>
+            <label class="checkbox"><input id="vaFirstUse" type="checkbox" checked /> First Use</label>
           </div>
         </div>
 
@@ -226,35 +209,55 @@
     </section>
   </main>
 
-  <!-- Lead Modal (Gate) -->
+  <!-- Lead Modal (Gate) — NO ZIP here -->
   <dialog id="leadModal" aria-labelledby="leadModalTitle">
     <form id="leadForm" method="dialog">
-      <h2 id="leadModalTitle">Get Your Personalized Results</h2>
-      <p class="muted">Enter your details to unlock live pricing. We’ll price instantly and re‑price as you adjust inputs.</p>
+      <h2 id="leadModalTitle">Get your estimate</h2>
+      <p class="muted">Enter your info once. After that, the calculator auto‑recalculates as you tweak numbers.</p>
 
       <div class="grid two-col">
         <div class="field">
-          <label for="leadName">Name</label>
-          <input id="leadName" type="text" autocomplete="name" required />
+          <label for="leadFirst">First name</label>
+          <input id="leadFirst" type="text" autocomplete="given-name" required />
         </div>
         <div class="field">
-          <label for="leadEmail">Email</label>
-          <input id="leadEmail" type="email" autocomplete="email" required />
+          <label for="leadLast">Last name</label>
+          <input id="leadLast" type="text" autocomplete="family-name" />
         </div>
         <div class="field">
           <label for="leadPhone">Phone</label>
-          <input id="leadPhone" type="tel" autocomplete="tel" />
+          <input id="leadPhone" type="tel" autocomplete="tel" placeholder="e.g., (480) 555‑1234" />
         </div>
         <div class="field">
-          <label for="leadZip">ZIP</label>
-          <input id="leadZip" type="text" inputmode="numeric" pattern="\\d{5}" placeholder="#####"
-                 maxlength="10" required />
+          <label for="leadEmail">Email</label>
+          <input id="leadEmail" type="email" autocomplete="email" required placeholder="e.g., you@email.com" />
+        </div>
+        <div class="field">
+          <label for="leadTimeline">Timeline</label>
+          <select id="leadTimeline">
+            <option value="0-30d">0–30 days</option>
+            <option value="30-90d" selected>30–90 days</option>
+            <option value="90d+">90+ days</option>
+            <option value="just-looking">Just looking</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="leadTextOK">Text updates?</label>
+          <select id="leadTextOK">
+            <option value="Yes" selected>Yes</option>
+            <option value="No">No</option>
+          </select>
         </div>
       </div>
 
+      <p class="muted" style="margin-top:8px;">
+        By submitting, you agree AZM Lending may contact you about mortgage options.
+        (Standard messaging/data rates may apply.)
+      </p>
+
       <div class="buttons right">
-        <button type="button" id="leadCancel" class="ghost">Cancel</button>
-        <button type="submit" class="primary">Continue</button>
+        <button type="button" id="leadCancel" class="ghost">Not now</button>
+        <button type="submit" class="primary">Unlock &amp; Show Results</button>
       </div>
       <div id="leadStatus" class="muted" aria-live="polite"></div>
     </form>
@@ -268,6 +271,7 @@
     </div>
   </footer>
 
-  <script defer src="app.js"></script>
+  <!-- App -->
+  <script src="app.js"></script>
 </body>
 </html>
