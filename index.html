@@ -4,48 +4,48 @@
   <meta charset="utf-8" />
   <title>AZM — Lead‑Gated Mortgage Calculator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="site-header">
     <h1>Mortgage Calculator</h1>
-    <div class="env-chip" id="versionChip"></div>
+    <div class="env-chip" id="versionChip" aria-label="Version"></div>
   </header>
 
   <main>
+    <!-- Config block (read-only for the user; editable by devs) -->
     <section class="card config">
       <h2>Configuration</h2>
       <div class="config-row">
         <label>Rates API (WS‑1)</label>
-        <input id="cfgRatesUrl" readonly />
+        <input id="cfgRatesUrl" type="text" readonly />
       </div>
       <div class="config-row">
         <label>Pricing API (WS‑2)</label>
-        <input id="cfgPricingUrl" readonly />
+        <input id="cfgPricingUrl" type="text" readonly />
       </div>
       <div class="config-row">
         <label>Leads API (WS‑3)</label>
-        <input id="cfgLeadsUrl" readonly />
+        <input id="cfgLeadsUrl" type="text" readonly />
       </div>
       <div class="config-row">
         <label>LLPA/PMI Sheet ID</label>
-        <input id="cfgLlpaSheet" readonly />
+        <input id="cfgLlpaSheet" type="text" readonly />
       </div>
       <div class="config-row">
         <label>Leads DB Sheet ID</label>
-        <input id="cfgLeadsSheet" readonly />
+        <input id="cfgLeadsSheet" type="text" readonly />
       </div>
     </section>
 
+    <!-- Inputs -->
     <section class="card">
       <h2>Inputs</h2>
-
       <form id="calcForm" novalidate>
         <div class="grid two-col">
           <div class="field">
-            <label>Program</label>
-            <select id="program">
+            <label for="program">Program</label>
+            <select id="program" name="program" required>
               <option value="CONV30">Conventional 30‑Year</option>
               <option value="FHA30">FHA 30‑Year</option>
               <option value="VA30">VA 30‑Year</option>
@@ -54,8 +54,8 @@
           </div>
 
           <div class="field">
-            <label>Transaction</label>
-            <select id="txn">
+            <label for="txn">Transaction</label>
+            <select id="txn" name="txn" required>
               <option value="PURCHASE">Purchase</option>
               <option value="RT_REFI">Rate/Term Refi</option>
               <option value="CO_REFI">Cash‑Out Refi</option>
@@ -63,100 +63,160 @@
           </div>
 
           <div class="field">
-            <label>Term (years)</label>
-            <input id="termYears" type="number" value="30" min="10" max="40" />
+            <label for="termYears">Term (years)</label>
+            <input id="termYears" type="number" min="10" max="40" step="1" value="30" required />
           </div>
 
           <div class="field">
-            <label>Loan Amount ($)</label>
-            <input id="loan" type="number" value="400000" />
+            <label id="labelLoan" for="loan">Base Loan Amount ($)</label>
+            <input id="loan" type="number" min="50000" step="1000" value="400000" required />
           </div>
 
           <div class="field">
-            <label>Property Value ($)</label>
-            <input id="value" type="number" value="444444" />
+            <label id="labelValue" for="value">Property Value ($)</label>
+            <input id="value" type="number" min="50000" step="1000" value="444444" required />
           </div>
 
           <div class="field">
-            <label>FICO</label>
-            <input id="fico" type="number" value="740" />
+            <label for="ltv">LTV (%)</label>
+            <input id="ltv" type="number" min="0" max="200" step="0.01" placeholder="Auto" />
+            <small class="muted">Editing LTV updates the loan; editing loan/value updates LTV.</small>
           </div>
 
           <div class="field">
-            <label>Borrower Points (%)</label>
-            <input id="borrowerPts" type="number" value="0.75" step="0.125" />
+            <label for="propZip">Property ZIP</label>
+            <input id="propZip" type="text" inputmode="numeric" maxlength="10" placeholder="#####"/>
+            <label class="checkbox" style="margin-top:6px;">
+              <input id="autoEscrowsToggle" type="checkbox" checked />
+              Auto‑estimate taxes & HOI from ZIP & value
+            </label>
+            <div id="zipMsg" class="muted" style="margin-top:6px;"></div>
           </div>
 
           <div class="field">
-            <label>Annual Taxes ($)</label>
-            <input id="taxes" type="number" value="3600" />
+            <label for="fico">FICO</label>
+            <input id="fico" type="number" min="300" max="850" step="1" value="740" />
+            <input id="ficoSlider" type="range" min="300" max="850" step="1" style="margin-top:6px;" />
           </div>
 
           <div class="field">
-            <label>Annual Insurance ($)</label>
-            <input id="ins" type="number" value="1200" />
+            <label for="borrowerPts">Borrower Points (%)</label>
+            <input id="borrowerPts" type="number" min="-3" max="5" step="0.125" value="0.75" />
+            <input id="pointsSlider" type="range" min="-3" max="5" step="0.125" style="margin-top:6px;" />
           </div>
 
           <div class="field">
-            <label>HOA (monthly $)</label>
-            <input id="hoa" type="number" value="50" />
+            <label for="taxes">Annual Property Taxes ($)</label>
+            <input id="taxes" type="number" min="0" step="50" value="3600" />
+          </div>
+
+          <div class="field">
+            <label for="ins">Annual Homeowners Insurance ($)</label>
+            <input id="ins" type="number" min="0" step="25" value="1200" />
+          </div>
+
+          <div class="field">
+            <label for="hoa">HOA (monthly $)</label>
+            <input id="hoa" type="number" min="0" step="5" value="50" />
           </div>
         </div>
 
+        <!-- Transaction-aware helpers -->
+        <div id="panelPurchase" class="program-panel">
+          <h3>Purchase Details</h3>
+          <div class="grid two-col">
+            <div class="field">
+              <label for="downPct">Down Payment (%)</label>
+              <input id="downPct" type="number" min="0" max="100" step="0.01" placeholder="e.g., 10" />
+            </div>
+          </div>
+        </div>
+
+        <div id="panelRefi" class="program-panel hidden">
+          <h3>Refi Details</h3>
+          <div class="grid two-col">
+            <div class="field">
+              <label for="equityPct">Equity (%)</label>
+              <input id="equityPct" type="number" min="0" max="100" step="0.01" placeholder="e.g., 20" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Program‑specific panels -->
         <div id="panelCONV" class="program-panel">
           <h3>Conventional Options</h3>
           <div class="grid three-col">
             <label class="checkbox">
-              <input id="pmiToggle" type="checkbox" checked /> PMI enabled
+              <input id="pmiToggle" type="checkbox" checked />
+              PMI enabled
             </label>
             <label class="checkbox">
-              <input id="dtiOver45" type="checkbox" /> DTI > 45%
+              <input id="dtiOver45" type="checkbox" />
+              DTI &gt; 45%
             </label>
             <label class="checkbox">
-              <input id="twoPlusBorrowers" type="checkbox" /> 2+ Borrowers
+              <input id="twoPlusBorrowers" type="checkbox" />
+              2+ Borrowers
             </label>
           </div>
         </div>
 
         <div id="panelFHA" class="program-panel hidden">
           <h3>FHA Options</h3>
-          <label class="checkbox">
-            <input id="financeUfmip" type="checkbox" checked /> Finance UFMIP
-          </label>
-          <div class="field">
-            <label>Annual MIP (%)</label>
-            <input id="annualMip" type="number" value="0.55" step="0.01" />
+          <div class="grid two-col">
+            <label class="checkbox">
+              <input id="financeUfmip" type="checkbox" checked />
+              Finance UFMIP
+            </label>
+            <div class="field">
+              <label for="annualMip">Annual MIP (%)</label>
+              <input id="annualMip" type="number" min="0" max="2" step="0.01" value="0.55" />
+            </div>
           </div>
         </div>
 
         <div id="panelVA" class="program-panel hidden">
           <h3>VA Options</h3>
-          <label class="checkbox">
-            <input id="vaExempt" type="checkbox" /> FF Exempt
-          </label>
-          <label class="checkbox">
-            <input id="vaFirstUse" type="checkbox" checked /> First Use
-          </label>
+          <div class="grid two-col">
+            <label class="checkbox">
+              <input id="vaExempt" type="checkbox" />
+              Funding Fee Exempt
+            </label>
+            <label class="checkbox">
+              <input id="vaFirstUse" type="checkbox" checked />
+              First Use
+            </label>
+          </div>
         </div>
 
         <div id="panelDSCR" class="program-panel hidden">
           <h3>DSCR Options</h3>
-          <div class="field">
-            <label>DSCR Ratio</label>
-            <input id="dscrRatio" type="number" value="1.25" step="0.05" />
+          <div class="grid two-col">
+            <div class="field">
+              <label for="dscrRatio">DSCR Ratio</label>
+              <input id="dscrRatio" type="number" min="0.75" max="2.0" step="0.05" value="1.25" />
+            </div>
+            <div class="field">
+              <label for="dscrPrepay">Prepay Term (future)</label>
+              <input id="dscrPrepay" type="text" placeholder="e.g., 3yr, 5yr (not used yet)" disabled />
+            </div>
           </div>
+          <p class="muted">
+            Note: DSCR par should follow Conv consumer par + 0.50% spread (verified on backend).
+          </p>
         </div>
 
+        <!-- Actions -->
         <div class="buttons">
           <button id="btnGetResults" type="button" class="primary">Get My Results</button>
           <button id="btnCalculate" type="button" class="primary" disabled>Calculate</button>
           <button id="btnSave" type="button" class="secondary" disabled>Save Quote</button>
         </div>
-
-        <div id="statusArea" class="status" aria-live="polite"></div>
+        <div id="statusArea" class="status" role="status" aria-live="polite"></div>
       </form>
     </section>
 
+    <!-- Results -->
     <section class="card">
       <h2>Results</h2>
       <div id="results" class="results">
@@ -166,27 +226,29 @@
     </section>
   </main>
 
-  <!-- Lead modal -->
-  <dialog id="leadModal">
+  <!-- Lead Modal (Gate) -->
+  <dialog id="leadModal" aria-labelledby="leadModalTitle">
     <form id="leadForm" method="dialog">
-      <h2>Get Your Personalized Results</h2>
+      <h2 id="leadModalTitle">Get Your Personalized Results</h2>
+      <p class="muted">Enter your details to unlock live pricing. We’ll price instantly and re‑price as you adjust inputs.</p>
 
       <div class="grid two-col">
         <div class="field">
-          <label>Name</label>
-          <input id="leadName" required />
+          <label for="leadName">Name</label>
+          <input id="leadName" type="text" autocomplete="name" required />
         </div>
         <div class="field">
-          <label>Email</label>
-          <input id="leadEmail" type="email" required />
+          <label for="leadEmail">Email</label>
+          <input id="leadEmail" type="email" autocomplete="email" required />
         </div>
         <div class="field">
-          <label>Phone</label>
-          <input id="leadPhone" required />
+          <label for="leadPhone">Phone</label>
+          <input id="leadPhone" type="tel" autocomplete="tel" />
         </div>
         <div class="field">
-          <label>ZIP</label>
-          <input id="leadZip" required />
+          <label for="leadZip">ZIP</label>
+          <input id="leadZip" type="text" inputmode="numeric" pattern="\\d{5}" placeholder="#####"
+                 maxlength="10" required />
         </div>
       </div>
 
@@ -194,15 +256,18 @@
         <button type="button" id="leadCancel" class="ghost">Cancel</button>
         <button type="submit" class="primary">Continue</button>
       </div>
-
-      <div id="leadStatus" class="muted"></div>
+      <div id="leadStatus" class="muted" aria-live="polite"></div>
     </form>
   </dialog>
 
   <footer class="site-footer">
-    <span id="footerVersion">UI v0.1.0</span>
+    <div>
+      <span id="footerVersion">UI v0.1.1</span>
+      <span aria-hidden="true">•</span>
+      <span>AZM</span>
+    </div>
   </footer>
 
-  <script src="app.js"></script>
+  <script defer src="app.js"></script>
 </body>
 </html>
