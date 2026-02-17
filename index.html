@@ -2,243 +2,315 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>AZM Mortgage Calculator (Live API)</title>
+  <title>AZM – Workspace 4 • Lead‑Gated Mortgage Calculator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  styles.css
+  <link href="./styles.css" rel="stylesheet" />
 </head>
-<body class="light">
-  <header class="site-header">
-    <div class="header-inner">
-      <h1>AZM Mortgage Calculator (Live API)</h1>
-      <div class="status-dot ok" aria-label="API status"></div>
-      <div class="status-text">API status: live</div>
-      <div class="env-chip" id="versionChip" aria-label="Version"></div>
-    </div>
+<body>
+  <header class="app-header">
+    <h1>Mortgage Calculator (Lead‑Gated)</h1>
+    <div class="timestamp" id="lastQuoted">Last quoted: —</div>
   </header>
 
-  <main>
-    <!-- Config (read-only) -->
-    <section class="card config">
-      <div class="config-grid">
-        <div><label>Rates API (WS‑1)</label><input id="cfgRatesUrl" readonly /></div>
-        <div><label>Pricing API (WS‑2)</label><input id="cfgPricingUrl" readonly /></div>
-        <div><label>Leads API (WS‑3)</label><input id="cfgLeadsUrl" readonly /></div>
-        <div><label>LLPA/PMI Sheet ID</label><input id="cfgLlpaSheet" readonly /></div>
-        <div><label>Leads DB Sheet ID</label><input id="cfgLeadsSheet" readonly /></div>
+  <main class="container">
+
+    <!-- Dev Config (visible only when dev mode is on) -->
+    <section class="card" id="devConfig" style="display:none">
+      <h2>Developer Config</h2>
+      <div class="grid grid-2">
+        <div class="form-control">
+          <label for="ws3BaseInput">WS‑3 Base URL</label>
+          <input id="ws3BaseInput" type="text" placeholder="https://.../exec" />
+          <div class="helper">Overrides baked-in WS‑3 for both <code>upsertLead</code> and <code>saveQuote</code>.</div>
+        </div>
+        <div class="form-control">
+          <label>Dev Mode</label>
+          <div class="pill-group" id="devModeGroup">
+            <button type="button" class="pill" data-value="on">On</button>
+            <button type="button" class="pill active" data-value="off">Off</button>
+          </div>
+          <div class="helper">Append <code>?dev=1</code> to URL or flip “On” to persist dev mode in <code>localStorage</code>.</div>
+        </div>
+      </div>
+
+      <div class="form-control">
+        <label for="tablesJson">State Tables JSON</label>
+        <textarea id="tablesJson" rows="10" placeholder='Paste either:
+{
+  "STATE_TAX_RATE_2023_PCT": { "AZ":0.500, ... },
+  "HOI_2022": { "Arizona":1018, ... }
+}
+or just one of those objects.'></textarea>
+        <div class="helper">
+          HOI is the average annual premium at $300k coverage (2022), scaled by <code>value / 300000</code>, rounded to $25.
+          Taxes use state % of property value (2023). ZIP → state is resolved via zippopotam.us.
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="applyConfigBtn" class="primary">Apply &amp; Save</button>
+        <button id="resetConfigBtn" class="ghost">Reset Overrides</button>
+      </div>
+      <div class="status-line" id="devStatus"></div>
+    </section>
+
+    <!-- Top: Program / Txn / Term / ZIP -->
+    <section class="card">
+      <h2>Program / Transaction / Term / ZIP</h2>
+      <div class="grid grid-4">
+        <div class="form-control">
+          <label for="program">Program</label>
+          <select id="program">
+            <option value="CONV30">Conventional 30</option>
+            <option value="CONV15">Conventional 15</option>
+            <option value="FHA30">FHA 30</option>
+            <option value="VA30">VA 30</option>
+            <option value="DSCR30">DSCR 30</option>
+          </select>
+        </div>
+
+        <div class="form-control">
+          <label>Transaction</label>
+          <div class="pill-group" id="txnGroup">
+            <button type="button" class="pill active" data-value="PURCHASE">Purchase</button>
+            <button type="button" class="pill" data-value="REFI">Refi</button>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label>Term</label>
+          <div class="pill-group" id="termGroup">
+            <button type="button" class="pill active" data-value="360">30‑yr</button>
+            <button type="button" class="pill" data-value="180">15‑yr</button>
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label for="propZip">Property ZIP</label>
+          <div class="zip-row">
+            <input id="propZip" type="text" inputmode="numeric" maxlength="5" class="needs-update" value="85254" />
+            <div class="city-state" id="cityState">—</div>
+          </div>
+          <div id="zipMsg" class="msg" style="display:none"></div>
+          <div class="helper">Change ZIP to a new valid 5‑digit value to enable results.</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="gateBtn" class="primary" disabled>Get My Results</button>
+      </div>
+      <div class="status-line" id="statusTop"></div>
+    </section>
+
+    <!-- Loan Structure -->
+    <section class="card">
+      <h2>Loan Structure</h2>
+      <div class="grid grid-3">
+        <div class="form-control">
+          <label for="propValue">Property Value</label>
+          <input id="propValue" type="text" inputmode="decimal" value="$500,000" />
+        </div>
+        <div class="form-control">
+          <label for="ltvPct">LTV %</label>
+          <input id="ltvPct" type="text" inputmode="decimal" value="80%" />
+        </div>
+        <div class="form-control">
+          <label for="loanAmt">Loan Amount</label>
+          <input id="loanAmt" type="text" inputmode="decimal" value="$400,000" />
+        </div>
       </div>
     </section>
 
-    <!-- Inputs -->
+    <!-- Credit & Points -->
     <section class="card">
-      <form id="calcForm" novalidate>
-        <div class="grid two-col">
-          <div class="field">
-            <label for="program">Program</label>
-            <select id="program" required>
-              <option value="CONV30" selected>Conventional</option>
-              <option value="FHA30">FHA</option>
-              <option value="VA30">VA</option>
-              <option value="DSCR30">DSCR</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="txn">Transaction Type</label>
-            <select id="txn" required>
-              <option value="PURCHASE" selected>Purchase</option>
-              <option value="RT_REFI">Refi (Rate/Term)</option>
-              <option value="CO_REFI">Refi (Cash‑Out)</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="termYears">Term</label>
-            <select id="termYears">
-              <option value="30" selected>30‑Year Fixed</option>
-              <option value="20">20‑Year Fixed</option>
-              <option value="15">15‑Year Fixed</option>
-            </select>
-          </div>
-
-          <div class="field">
-            <label for="propZip">Property ZIP <span class="muted">(update to unlock)</span></label>
-            <input
-              id="propZip"
-              type="text"
-              inputmode="numeric"
-              maxlength="10"
-              value="85254"
-              class="needs-confirm"
-              placeholder="e.g., 85254"
-              required
-              aria-describedby="zipHelp"
-            />
-            <div id="zipHelp" class="hint">Change the ZIP to enable “Get My Results”.</div>
-            <div id="zipMsg" class="muted" style="margin-top:6px; display:none;"></div>
-            <div id="cityStateBadge" class="badge hidden"></div>
+      <h2>Credit &amp; Points</h2>
+      <div class="grid grid-2">
+        <div class="form-control">
+          <label for="fico">FICO</label>
+          <div class="range-row">
+            <input id="fico" type="range" min="580" max="820" step="10" value="740" />
+            <input id="ficoNum" type="number" min="300" max="850" step="1" value="740" class="chip" />
           </div>
         </div>
-
-        <h3 class="section-title">Loan Structure</h3>
-        <div class="grid two-col">
-          <div class="field">
-            <label id="labelValue" for="value">Purchase Price</label>
-            <input id="value" type="number" min="50000" step="1000" value="500000" required />
-          </div>
-
-          <div class="field">
-            <label id="labelLoan" for="loan">Base Loan Amount</label>
-            <input id="loan" type="number" min="0" step="1000" value="400000" required />
-          </div>
-
-          <div class="field">
-            <label for="ltv">LTV (%)</label>
-            <input id="ltv" type="number" min="0" max="200" step="0.01" value="80" />
-            <small class="muted">Editing LTV updates loan; editing loan/value updates LTV.</small>
-          </div>
-
-          <div class="field">
-            <label for="downPct">Down Payment (%)</label>
-            <input id="downPct" type="number" min="0" max="100" step="0.01" placeholder="e.g., 20" />
+        <div class="form-control">
+          <label for="points">Borrower Points</label>
+          <div class="range-row">
+            <input id="points" type="range" min="-3.0" max="3.0" step="0.125" value="0.0" />
+            <input id="pointsNum" type="number" min="-5" max="5" step="0.125" value="0.0" class="chip" />
           </div>
         </div>
+      </div>
 
-        <h3 class="section-title">Credit & Points</h3>
-        <div class="grid two-col">
-          <div class="field">
-            <label for="fico">Credit Score</label>
-            <div class="slider-row">
-              <input id="fico" type="number" min="300" max="850" step="1" value="740" />
-              <div class="chip" id="ficoChip">740</div>
-            </div>
-            <input id="ficoSlider" type="range" min="300" max="850" step="1" />
-          </div>
-
-          <div class="field">
-            <label for="borrowerPts">Borrower Paid Points (optional)</label>
-            <div class="slider-row">
-              <input id="borrowerPts" type="number" min="-3" max="5" step="0.125" value="0.000" />
-              <div class="chip" id="ptsChip">0.000</div>
-            </div>
-            <input id="pointsSlider" type="range" min="-3" max="5" step="0.125" />
+      <div class="grid grid-3">
+        <div class="form-control">
+          <label>PMI (Conventional)</label>
+          <div class="pill-group" id="pmiToggle">
+            <button type="button" class="pill active" data-value="true">Yes</button>
+            <button type="button" class="pill" data-value="false">No</button>
           </div>
         </div>
-
-        <h3 class="section-title">Taxes & Insurance</h3>
-        <div class="grid two-col">
-          <div class="field">
-            <label for="taxes">Annual Property Taxes</label>
-            <input id="taxes" type="number" min="0" step="25" value="0" />
-          </div>
-          <div class="field">
-            <label for="ins">Annual Homeowners Insurance</label>
-            <input id="ins" type="number" min="0" step="25" value="0" />
-          </div>
-          <div class="field">
-            <label for="hoa">Monthly HOA</label>
-            <input id="hoa" type="number" min="0" step="5" value="0" />
-          </div>
-          <div class="field">
-            <label for="pmiToggle">Show PMI / MI?</label>
-            <select id="pmiToggle">
-              <option value="true" selected>Yes</option>
-              <option value="false">No</option>
-            </select>
+        <div class="form-control">
+          <label>DTI &gt; 45%</label>
+          <div class="pill-group" id="dti45">
+            <button type="button" class="pill" data-value="true">Yes</button>
+            <button type="button" class="pill active" data-value="false">No</button>
           </div>
         </div>
-
-        <!-- Program‑specific panels -->
-        <div id="panelCONV" class="program-panel">
-          <div class="grid two-col">
-            <label class="checkbox"><input id="dtiOver45" type="checkbox" /> DTI &gt; 45%</label>
-            <label class="checkbox"><input id="twoPlusBorrowers" type="checkbox" /> 2+ Borrowers</label>
+        <div class="form-control">
+          <label>2+ Borrowers</label>
+          <div class="pill-group" id="twoBorrowers">
+            <button type="button" class="pill" data-value="true">Yes</button>
+            <button type="button" class="pill active" data-value="false">No</button>
           </div>
         </div>
+      </div>
+    </section>
 
-        <div id="panelFHA" class="program-panel hidden">
-          <div class="grid two-col">
-            <label class="checkbox"><input id="financeUfmip" type="checkbox" checked /> Finance UFMIP</label>
-            <div class="field"><label for="annualMip">Annual MIP (%)</label><input id="annualMip" type="number" min="0" max="2" step="0.01" value="0.55" /></div>
+    <!-- Taxes & Insurance -->
+    <section class="card">
+      <h2>Taxes &amp; Insurance</h2>
+      <div class="grid grid-3">
+        <div class="form-control">
+          <label for="taxes">Annual Taxes <span class="muted">(Est.)</span></label>
+          <div class="with-chip">
+            <input id="taxes" type="text" inputmode="decimal" value="$0" />
+            <button id="taxAutoChip" type="button" class="mini-chip" title="Toggle Auto">Auto</button>
           </div>
         </div>
-
-        <div id="panelVA" class="program-panel hidden">
-          <div class="grid two-col">
-            <label class="checkbox"><input id="vaExempt" type="checkbox" /> Funding Fee Exempt</label>
-            <label class="checkbox"><input id="vaFirstUse" type="checkbox" checked /> First Use</label>
+        <div class="form-control">
+          <label for="ins">Annual HOI <span class="muted">(Est.)</span></label>
+          <div class="with-chip">
+            <input id="ins" type="text" inputmode="decimal" value="$0" />
+            <button id="insAutoChip" type="button" class="mini-chip" title="Toggle Auto">Auto</button>
           </div>
         </div>
+        <div class="form-control">
+          <label for="hoa">Annual HOA</label>
+          <input id="hoa" type="text" inputmode="decimal" value="$0" />
+        </div>
+      </div>
+      <div class="helper">Taxes/HOI auto‑estimate from state when ZIP or value changes; you can override manually (toggle Auto).</div>
+    </section>
 
-        <div id="panelDSCR" class="program-panel hidden">
-          <div class="grid two-col">
-            <div class="field"><label for="dscrRatio">DSCR Ratio</label><input id="dscrRatio" type="number" min="0.75" max="2.0" step="0.05" value="1.25" /></div>
-            <div class="field"><label for="dscrPrepay">Prepay Term (future)</label><input id="dscrPrepay" type="text" placeholder="e.g., 3yr, 5yr (not used yet)" disabled /></div>
+    <!-- Program-specific panels -->
+    <section class="card" id="panelFHA" hidden>
+      <h2>FHA Options</h2>
+      <div class="grid grid-3">
+        <div class="form-control">
+          <label>Finance UFMIP</label>
+          <div class="pill-group" id="financeUfmip">
+            <button type="button" class="pill active" data-value="true">Yes</button>
+            <button type="button" class="pill" data-value="false">No</button>
           </div>
-          <p class="muted">Note: DSCR par should follow Conv consumer par + 0.50% spread.</p>
         </div>
+        <div class="form-control">
+          <label for="annualMip">Annual MIP %</label>
+          <input id="annualMip" type="number" step="0.01" value="0.55" />
+        </div>
+      </div>
+    </section>
 
-        <!-- Actions -->
-        <div class="buttons row">
-          <button id="btnGetResults" type="button" class="primary" disabled>Get My Results</button>
-          <button id="btnCalculate" type="button" class="primary" disabled>Calculate</button>
-          <button id="btnReset" type="button" class="ghost">Reset</button>
-          <button id="btnSave" type="button" class="secondary" disabled>Save Quote</button>
+    <section class="card" id="panelVA" hidden>
+      <h2>VA Options</h2>
+      <div class="grid grid-3">
+        <div class="form-control">
+          <label>Funding Fee Exempt</label>
+          <div class="pill-group" id="vaExempt">
+            <button type="button" class="pill" data-value="true">Yes</button>
+            <button type="button" class="pill active" data-value="false">No</button>
+          </div>
         </div>
-        <div id="statusArea" class="status" role="status" aria-live="polite"></div>
-      </form>
+        <div class="form-control">
+          <label>First Use</label>
+          <div class="pill-group" id="vaFirstUse">
+            <button type="button" class="pill active" data-value="true">Yes</button>
+            <button type="button" class="pill" data-value="false">No</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="panelDSCR" hidden>
+      <h2>DSCR Options</h2>
+      <div class="grid grid-3">
+        <div class="form-control">
+          <label for="dscrRatio">DSCR Ratio</label>
+          <input id="dscrRatio" type="number" step="0.05" value="1.25" />
+        </div>
+      </div>
+      <div class="helper">DSCR par uses backend spread logic (+0.50% over consumer par).</div>
     </section>
 
     <!-- Results -->
     <section class="card">
-      <h2 class="section-title">Results</h2>
-      <div id="results" class="results"><div class="placeholder">Results will appear here after pricing…</div></div>
-      <div id="lastQuoted" class="timestamp"></div>
+      <h2>Results</h2>
+      <div id="results" class="results">
+        <div class="muted">Results will appear here after you get gated and priced.</div>
+      </div>
+      <div class="actions">
+        <button id="saveQuoteBtn" class="secondary" disabled>Save Quote</button>
+      </div>
+      <div class="status-line" id="statusBottom"></div>
     </section>
+
   </main>
 
-  <!-- Lead Modal (gate) — no ZIP -->
-  <dialog id="leadModal" aria-labelledby="leadModalTitle">
-    <form id="leadForm" method="dialog">
-      <h2 id="leadModalTitle">Get your estimate</h2>
-      <p class="muted">Enter your info once. After that, the calculator auto‑recalculates as you tweak numbers.</p>
-
-      <div class="grid two-col">
-        <div class="field"><label for="leadFirst">First name</label><input id="leadFirst" type="text" autocomplete="given-name" required /></div>
-        <div class="field"><label for="leadLast">Last name</label><input id="leadLast" type="text" autocomplete="family-name" /></div>
-        <div class="field"><label for="leadPhone">Phone</label><input id="leadPhone" type="tel" autocomplete="tel" placeholder="e.g., (480) 555‑1234" /></div>
-        <div class="field"><label for="leadEmail">Email</label><input id="leadEmail" type="email" autocomplete="email" required placeholder="e.g., you@email.com" /></div>
-        <div class="field">
-          <label for="leadTimeline">Timeline</label>
-          <select id="leadTimeline">
-            <option value="0-30d">0–30 days</option>
-            <option value="30-90d" selected>30–90 days</option>
-            <option value="90d+">90+ days</option>
-            <option value="just-looking">Just looking</option>
-          </select>
+  <!-- Lead Gate Modal -->
+  <div id="leadModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="leadTitle">
+      <h3 id="leadTitle">Get My Results</h3>
+      <form id="leadForm">
+        <div class="grid grid-2">
+          <div class="form-control">
+            <label for="firstName">First name</label>
+            <input id="firstName" type="text" required />
+          </div>
+          <div class="form-control">
+            <label for="lastName">Last name</label>
+            <input id="lastName" type="text" required />
+          </div>
         </div>
-        <div class="field">
-          <label for="leadTextOK">Text updates?</label>
-          <select id="leadTextOK">
-            <option value="Yes" selected>Yes</option>
-            <option value="No">No</option>
-          </select>
+        <div class="grid grid-2">
+          <div class="form-control">
+            <label for="phone">Phone</label>
+            <input id="phone" type="tel" placeholder="(555) 555-5555" />
+          </div>
+          <div class="form-control">
+            <label for="email">Email</label>
+            <input id="email" type="email" required />
+          </div>
         </div>
-      </div>
+        <div class="grid grid-2">
+          <div class="form-control">
+            <label for="timeline">Timeline</label>
+            <select id="timeline" required>
+              <option value="">Choose…</option>
+              <option>ASAP</option>
+              <option>30-60 days</option>
+              <option>60-90 days</option>
+              <option>90+ days</option>
+              <option>Just exploring</option>
+            </select>
+          </div>
+          <div class="form-control">
+            <label>Text updates</label>
+            <div class="pill-group" id="textUpdates">
+              <button type="button" class="pill" data-value="true">Yes</button>
+              <button type="button" class="pill active" data-value="false">No</button>
+            </div>
+          </div>
+        </div>
 
-      <p class="muted" style="margin-top:8px;">By submitting, you agree AZM Lending may contact you about mortgage options. (Standard messaging/data rates may apply.)</p>
+        <div class="modal-actions">
+          <button type="button" id="cancelLead" class="ghost">Cancel</button>
+          <button type="submit" class="primary">Continue</button>
+        </div>
+        <div class="status-line" id="statusLead"></div>
+      </form>
+    </div>
+  </div>
 
-      <div class="buttons right">
-        <button type="button" id="leadCancel" class="ghost">Not now</button>
-        <button type="submit" class="primary">Unlock &amp; Show Results</button>
-      </div>
-      <div id="leadStatus" class="muted" aria-live="polite"></div>
-    </form>
-  </dialog>
-
-  <footer class="site-footer">
-    <div><span id="footerVersion">UI v0.1.4</span><span aria-hidden="true">•</span><span>AZM</span></div>
-  </footer>
-
-  app.js</script>
+  <script src="./app.js" defer></script>
 </body>
 </html>
