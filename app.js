@@ -1,10 +1,10 @@
 // ======== AZM Workspace 4 — UI Engine (GitHub Pages) ========
-// Incorporates: lead gate, auto-pricing, improved saveQuote, ZIP->State escrows,
+// Lead gate (no ZIP), auto-pricing, improved saveQuote, ZIP->State escrows,
 // transaction-aware inputs, editable LTV, FICO & Points sliders.
 
 // ---------------- Config ----------------
 const CONFIG = {
-  versions: { ui: 'UI v0.1.1', pricing: 'Pricing v1.1.0', rates: 'Rates v1.3.0' },
+  versions: { ui: 'UI v0.1.2', pricing: 'Pricing v1.1.0', rates: 'Rates v1.3.0' },
 
   // WS‑1 (Rates): optional preload; DISABLED to avoid CORS noise in GitHub Pages context
   ratesUrl:
@@ -67,10 +67,6 @@ function setText(el, s) { if (el) el.textContent = s; }
 function syncTrioFrom(source) {
   const valueEl = $('#value'), loanEl = $('#loan'), ltvEl = $('#ltv');
   const value = getNumber(valueEl, 0), loan = getNumber(loanEl, 0);
-  let ltv = ltvEl ? getNumber(ltvEl, value > 0 ? (loan / value) * 100 : 0) : (value > 0 ? (loan / value) * 100 : 0);
-
-  const dpPctEl = $('#downPct');    // purchase helper
-  const eqPctEl = $('#equityPct');  // refi helper
 
   if (source === 'value') {
     if (ltvEl) { setNumber(loanEl, Math.round(getNumber(ltvEl) / 100 * getNumber(valueEl))); }
@@ -79,34 +75,31 @@ function syncTrioFrom(source) {
     if (value > 0) setNumber(ltvEl, (getNumber(loanEl) / value) * 100);
   } else if (source === 'ltv') {
     setNumber(loanEl, Math.round(getNumber(ltvEl) / 100 * value));
-  } else if (source === 'downPct' && dpPctEl) {
-    setNumber(loanEl, Math.round(value * (1 - getNumber(dpPctEl, 0) / 100)));
+  } else if (source === 'downPct') {
+    setNumber(loanEl, Math.round(value * (1 - getNumber($('#downPct'), 0) / 100)));
     if (value > 0) setNumber(ltvEl, (getNumber(loanEl) / value) * 100);
-  } else if (source === 'equityPct' && eqPctEl) {
-    setNumber(loanEl, Math.round(value * (1 - getNumber(eqPctEl, 0) / 100)));
+  } else if (source === 'equityPct') {
+    setNumber(loanEl, Math.round(value * (1 - getNumber($('#equityPct'), 0) / 100)));
     if (value > 0) setNumber(ltvEl, (getNumber(loanEl) / value) * 100);
   }
 
-  // Clamp UI ranges
   if (ltvEl) setNumber(ltvEl, Math.max(0, Math.min(200, getNumber(ltvEl))));
-  if (dpPctEl) setNumber(dpPctEl, Math.max(0, Math.min(100, getNumber(dpPctEl))));
-  if (eqPctEl) setNumber(eqPctEl, Math.max(0, Math.min(100, getNumber(eqPctEl))));
+  if ($('#downPct')) setNumber($('#downPct'), Math.max(0, Math.min(100, getNumber($('#downPct')))));
+  if ($('#equityPct')) setNumber($('#equityPct'), Math.max(0, Math.min(100, getNumber($('#equityPct')))));
 }
 
 function updateTxnPanels() {
   const txn = $('#txn')?.value || 'PURCHASE';
   $('#panelPurchase')?.classList.toggle('hidden', txn !== 'PURCHASE');
   $('#panelRefi')?.classList.toggle('hidden', txn === 'PURCHASE');
-  setText($('#labelValue'), txn === 'PURCHASE' ? 'Property Value ($)' : 'Property Value ($)');
+  setText($('#labelValue'), 'Property Value ($)');
   setText($('#labelLoan'), 'Base Loan Amount ($)');
 }
 
 // ---------------- ZIP → State Tax & HOI Estimator ----------------
-// Interprets your previous methodology: fetch state by ZIP via zippopotam.us,
-// use state-level property tax % of value and HOI average at $300k coverage,
-// then scale HOI by (value / 300k). (From your prior snippet.) [1](https://netorgft13002274-my.sharepoint.com/personal/josh_myazm_com/Documents/Microsoft%20Copilot%20Chat%20Files/AZM%20Calculator%20HTML.txt)
+// Uses zippopotam.us to get state by ZIP; applies state-level tax% to value;
+// HOI uses average at $300k coverage per state, scaled by value/300k.
 
-// State property tax rates (%) — 2023 (from your prior data)
 const STATE_TAX_RATE_2023_PCT = {
   AL:0.375, AK:0.875, AZ:0.500, AR:0.500, CA:0.750, CO:0.500, CT:1.500, DE:0.500,
   FL:0.750, GA:0.750, HI:0.375, ID:0.500, IL:1.875, IN:0.750, IA:1.250, KS:1.250,
@@ -116,8 +109,6 @@ const STATE_TAX_RATE_2023_PCT = {
   SD:1.000, TN:0.500, TX:1.375, UT:0.500, VT:1.375, VA:0.750, WA:0.750, WV:0.500,
   WI:1.250, WY:0.500, DC:0.625
 };
-
-// Average HOI premium by state at $300k coverage — 2022 (from your prior data)
 const HOI_2022 = {
   "Alabama":1748,"Alaska":1129,"Arizona":1018,"Arkansas":1740,"California":1492,"Colorado":2079,
   "Connecticut":1814,"Delaware":1103,"District of Columbia":1384,"Florida":2677,"Georgia":1655,
@@ -137,10 +128,8 @@ let stateAbbr = 'AZ';
 let stateName = 'Arizona';
 let cityName = '';
 
-function normalizeZip(zip){ const d = String(zip || '').replace(/\D/g, ''); return d.length >= 5 ? d.slice(0, 5) : ''; }
-
 async function fetchZipInfo(zip){
-  const z = normalizeZip(zip);
+  const z = normalizeZip5(zip);
   if (!z) return null;
   if (zipCache.has(z)) return zipCache.get(z);
   try{
@@ -187,14 +176,13 @@ function applyInsDefault(){
 }
 function setZipMsg(type, text){
   const el = $('#zipMsg'); if (!el) return;
-  if (!text){ el.textContent=''; return; }
-  el.textContent = text;
+  el.textContent = text || '';
 }
 
 function onZipInput(){
   clearTimeout(zipTimer);
   zipTimer = setTimeout(async () => {
-    const zip = normalizeZip($('#propZip')?.value || '');
+    const zip = normalizeZip5($('#propZip')?.value || '');
     if (!zip){
       stateAbbr = 'AZ'; stateName = 'Arizona'; cityName = '';
       setZipMsg('ok', '');
@@ -261,13 +249,6 @@ async function callSaveQuote(savePayload) {
   const url = `${CONFIG.leadsBase}?action=saveQuote`;
   console.debug('→ saveQuote payload', savePayload);
   return postTextJson(url, { payload: savePayload });
-}
-
-// Optional rates preload — disabled to avoid CORS noise when WS‑1 is GET-only
-async function preloadRates() {
-  // If you re-enable later, prefer simple GET:
-  // const res = await fetch(CONFIG.ratesUrl); const data = await res.json().catch(()=> ({}));
-  // console.debug('Rates preload:', data);
 }
 
 // ---------------- Inputs & Program Panels ----------------
@@ -359,7 +340,7 @@ function renderResults(data, inputs) {
 }
 function renderLastQuotedAt() { $('#lastQuoted') && ($('#lastQuoted').textContent = `Last quoted at ${nowStampMMDD_HHMM()}`); }
 
-// ---------------- Lead Gate ----------------
+// ---------------- Lead Gate (NO ZIP in modal) ----------------
 function openLeadModal() {
   const dlg = $('#leadModal');
   if (!dlg) return;
@@ -376,30 +357,34 @@ async function handleLeadSubmit(e) {
   const status = $('#leadStatus');
   if (status) { status.textContent = 'Creating lead…'; status.style.color = 'var(--muted)'; }
 
-  const name = $('#leadName')?.value.trim();
+  const first = $('#leadFirst')?.value.trim();
+  const last  = $('#leadLast')?.value.trim();
   const email = $('#leadEmail')?.value.trim();
   const phone = $('#leadPhone')?.value.trim();
-  const zip5Input = $('#leadZip')?.value;
-  const zip5 = normalizeZip5(zip5Input || '');
+  const timeline = $('#leadTimeline')?.value || '';
+  const textOk = $('#leadTextOK')?.value || '';
 
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { status.textContent = 'Please enter a valid email.'; status.style.color = '#ef4444'; return; }
-  if (!/^\d{5}$/.test(zip5)) { status.textContent = 'ZIP must be 5 digits.'; status.style.color = '#ef4444'; return; }
+
+  // Property ZIP is now required in the main form, not here.
+  const zip5 = normalizeZip5($('#propZip')?.value || '');
 
   try {
     const leadFields = {
-      'Primary Borrower Name': name || '',
+      'Primary Borrower Name': [first, last].filter(Boolean).join(' ').trim(),
       'Primary Borrower Email': email,
       'Primary Borrower Phone': phone || '',
-      'Subject ZIP': zip5,
-      Source: 'UI-W4',
+      'Lead Timeline': timeline,
+      'Text Updates OK': textOk,
+      'Source': 'UI-W4',
+      // Attach ZIP only if present
+      ...(zip5 ? { 'Subject ZIP': zip5 } : {}),
     };
     const res = await callUpsertLead(leadFields);
     if (!res || !res.ok || !res.leadToken) throw new Error(res?.message || 'Unexpected lead response.');
 
     localStorage.setItem(LS_KEYS.leadToken, res.leadToken);
     localStorage.setItem(LS_KEYS.leadEmail, email);
-
-    if ($('#propZip') && !$('#propZip').value) $('#propZip').value = zip5;
 
     $('#btnCalculate') && ($('#btnCalculate').disabled = false);
     $('#btnSave') && ($('#btnSave').disabled = false);
@@ -449,9 +434,11 @@ async function doSaveQuote() {
     const payload = {
       leadToken,
       inputs,
-      quote: lastPriceResult || null, // include snapshot so history is meaningful
+      quote: lastPriceResult || null,
       savedAt: nowStampMMDD_HHMM(),
       source: 'UI-W4',
+      // Pass through address-ish context if you later add it:
+      subjectZip: normalizeZip5($('#propZip')?.value || '') || undefined,
     };
     const res = await callSaveQuote(payload);
     console.debug('saveQuote response:', res);
@@ -553,5 +540,5 @@ window.addEventListener('DOMContentLoaded', () => {
   initConfigUi();
   initEvents();
   showProgramPanel($('#program')?.value || 'CONV30');
-  // preloadRates(); // disabled by default (avoid WS‑1 CORS noise)
+  // preloadRates(); // disabled (avoid WS‑1 CORS noise)
 });
