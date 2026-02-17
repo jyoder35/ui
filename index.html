@@ -2,159 +2,176 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>AZM — Lead‑Gated Mortgage Calculator</title>
+  <title>AZM Mortgage Calculator (Live API)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <!-- CSS -->
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="light">
   <header class="site-header">
-    <h1>Mortgage Calculator</h1>
-    <div class="env-chip" id="versionChip" aria-label="Version"></div>
+    <div class="header-inner">
+      <h1>AZM Mortgage Calculator (Live API)</h1>
+      <div class="status-dot ok" aria-label="API status"></div>
+      <div class="status-text">API status: live</div>
+      <div class="env-chip" id="versionChip" aria-label="Version"></div>
+    </div>
   </header>
 
   <main>
-    <!-- Config block (read-only for the user; editable by devs) -->
+    <!-- Config block (read-only for devs) -->
     <section class="card config">
-      <h2>Configuration</h2>
-      <div class="config-row">
-        <label>Rates API (WS‑1)</label>
-        <input id="cfgRatesUrl" type="text" readonly />
-      </div>
-      <div class="config-row">
-        <label>Pricing API (WS‑2)</label>
-        <input id="cfgPricingUrl" type="text" readonly />
-      </div>
-      <div class="config-row">
-        <label>Leads API (WS‑3)</label>
-        <input id="cfgLeadsUrl" type="text" readonly />
-      </div>
-      <div class="config-row">
-        <label>LLPA/PMI Sheet ID</label>
-        <input id="cfgLlpaSheet" type="text" readonly />
-      </div>
-      <div class="config-row">
-        <label>Leads DB Sheet ID</label>
-        <input id="cfgLeadsSheet" type="text" readonly />
+      <div class="config-grid">
+        <div>
+          <label>Rates API (WS‑1)</label>
+          <input id="cfgRatesUrl" type="text" readonly />
+        </div>
+        <div>
+          <label>Pricing API (WS‑2)</label>
+          <input id="cfgPricingUrl" type="text" readonly />
+        </div>
+        <div>
+          <label>Leads API (WS‑3)</label>
+          <input id="cfgLeadsUrl" type="text" readonly />
+        </div>
+        <div>
+          <label>LLPA/PMI Sheet ID</label>
+          <input id="cfgLlpaSheet" type="text" readonly />
+        </div>
+        <div>
+          <label>Leads DB Sheet ID</label>
+          <input id="cfgLeadsSheet" type="text" readonly />
+        </div>
       </div>
     </section>
 
     <!-- Inputs -->
     <section class="card">
-      <h2>Inputs</h2>
       <form id="calcForm" novalidate>
         <div class="grid two-col">
           <div class="field">
             <label for="program">Program</label>
             <select id="program" name="program" required>
-              <option value="CONV30">Conventional 30‑Year</option>
-              <option value="FHA30">FHA 30‑Year</option>
-              <option value="VA30">VA 30‑Year</option>
-              <option value="DSCR30">DSCR 30‑Year</option>
+              <option value="CONV30" selected>Conventional</option>
+              <option value="FHA30">FHA</option>
+              <option value="VA30">VA</option>
+              <option value="DSCR30">DSCR</option>
             </select>
           </div>
 
           <div class="field">
-            <label for="txn">Transaction</label>
+            <label for="txn">Transaction Type</label>
             <select id="txn" name="txn" required>
-              <option value="PURCHASE">Purchase</option>
-              <option value="RT_REFI">Rate/Term Refi</option>
-              <option value="CO_REFI">Cash‑Out Refi</option>
+              <option value="PURCHASE" selected>Purchase</option>
+              <option value="RT_REFI">Refi (Rate/Term)</option>
+              <option value="CO_REFI">Refi (Cash‑Out)</option>
             </select>
           </div>
 
           <div class="field">
-            <label for="termYears">Term (years)</label>
-            <input id="termYears" type="number" min="10" max="40" step="1" value="30" required />
+            <label for="termYears">Term</label>
+            <select id="termYears">
+              <option value="30" selected>30‑Year Fixed</option>
+              <option value="20">20‑Year Fixed</option>
+              <option value="15">15‑Year Fixed</option>
+            </select>
           </div>
 
           <div class="field">
-            <label id="labelLoan" for="loan">Base Loan Amount ($)</label>
-            <input id="loan" type="number" min="50000" step="1000" value="400000" required />
+            <label for="propZip">Property ZIP <span class="muted">(update to unlock)</span></label>
+            <input
+              id="propZip"
+              type="text"
+              inputmode="numeric"
+              maxlength="10"
+              value="85254"
+              class="needs-confirm"
+              placeholder="e.g., 85254"
+              required
+              aria-describedby="zipHelp"
+            />
+            <div id="zipHelp" class="hint">Change the ZIP to enable “Get My Results”.</div>
+            <div id="zipMsg" class="muted" style="margin-top:6px; display:none;"></div>
+            <div id="cityStateBadge" class="badge hidden"></div>
+          </div>
+        </div>
+
+        <h3 class="section-title">Loan Structure</h3>
+        <div class="grid two-col">
+          <div class="field">
+            <label id="labelValue" for="value">Purchase Price</label>
+            <input id="value" type="number" min="50000" step="1000" value="500000" required />
           </div>
 
           <div class="field">
-            <label id="labelValue" for="value">Property Value ($)</label>
-            <input id="value" type="number" min="50000" step="1000" value="444444" required />
+            <label id="labelLoan" for="loan">Base Loan Amount</label>
+            <input id="loan" type="number" min="0" step="1000" value="400000" required />
           </div>
 
           <div class="field">
             <label for="ltv">LTV (%)</label>
-            <input id="ltv" type="number" min="0" max="200" step="0.01" placeholder="Auto" />
-            <small class="muted">Editing LTV updates the loan; editing loan/value updates LTV.</small>
+            <input id="ltv" type="number" min="0" max="200" step="0.01" value="80" />
+            <small class="muted">Editing LTV updates loan; editing loan/value updates LTV.</small>
           </div>
 
           <div class="field">
-            <label for="propZip">Property ZIP <span class="muted">(required for taxes/HOI)</span></label>
-            <input id="propZip" type="text" inputmode="numeric" maxlength="10" placeholder="#####" required />
-            <label class="checkbox" style="margin-top:6px;">
-              <input id="autoEscrowsToggle" type="checkbox" checked />
-              Auto‑estimate taxes & HOI from ZIP & value
-            </label>
-            <div id="zipMsg" class="muted" style="margin-top:6px;"></div>
-          </div>
-
-          <div class="field">
-            <label for="fico">FICO</label>
-            <input id="fico" type="number" min="300" max="850" step="1" value="740" />
-            <input id="ficoSlider" type="range" min="300" max="850" step="1" style="margin-top:6px;" />
-          </div>
-
-          <div class="field">
-            <label for="borrowerPts">Borrower Points (%)</label>
-            <input id="borrowerPts" type="number" min="-3" max="5" step="0.125" value="0.75" />
-            <input id="pointsSlider" type="range" min="-3" max="5" step="0.125" style="margin-top:6px;" />
-          </div>
-
-          <div class="field">
-            <label for="taxes">Annual Property Taxes ($)</label>
-            <input id="taxes" type="number" min="0" step="50" value="3600" />
-          </div>
-
-          <div class="field">
-            <label for="ins">Annual Homeowners Insurance ($)</label>
-            <input id="ins" type="number" min="0" step="25" value="1200" />
-          </div>
-
-          <div class="field">
-            <label for="hoa">HOA (monthly $)</label>
-            <input id="hoa" type="number" min="0" step="5" value="50" />
+            <label for="downPct">Down Payment (%)</label>
+            <input id="downPct" type="number" min="0" max="100" step="0.01" placeholder="e.g., 20" />
           </div>
         </div>
 
-        <!-- Transaction-aware helpers -->
-        <div id="panelPurchase" class="program-panel">
-          <h3>Purchase Details</h3>
-          <div class="grid two-col">
-            <div class="field">
-              <label for="downPct">Down Payment (%)</label>
-              <input id="downPct" type="number" min="0" max="100" step="0.01" placeholder="e.g., 10" />
+        <h3 class="section-title">Credit & Points</h3>
+        <div class="grid two-col">
+          <div class="field">
+            <label for="fico">Credit Score</label>
+            <div class="slider-row">
+              <input id="fico" type="number" min="300" max="850" step="1" value="740" />
+              <div class="chip" id="ficoChip">740</div>
             </div>
+            <input id="ficoSlider" type="range" min="300" max="850" step="1" />
+          </div>
+
+          <div class="field">
+            <label for="borrowerPts">Borrower Paid Points (optional)</label>
+            <div class="slider-row">
+              <input id="borrowerPts" type="number" min="-3" max="5" step="0.125" value="0.000" />
+              <div class="chip" id="ptsChip">0.000</div>
+            </div>
+            <input id="pointsSlider" type="range" min="-3" max="5" step="0.125" />
           </div>
         </div>
 
-        <div id="panelRefi" class="program-panel hidden">
-          <h3>Refi Details</h3>
-          <div class="grid two-col">
-            <div class="field">
-              <label for="equityPct">Equity (%)</label>
-              <input id="equityPct" type="number" min="0" max="100" step="0.01" placeholder="e.g., 20" />
-            </div>
+        <h3 class="section-title">Taxes & Insurance</h3>
+        <div class="grid two-col">
+          <div class="field">
+            <label for="taxes">Annual Property Taxes</label>
+            <input id="taxes" type="number" min="0" step="25" value="0" />
+          </div>
+          <div class="field">
+            <label for="ins">Annual Homeowners Insurance</label>
+            <input id="ins" type="number" min="0" step="25" value="0" />
+          </div>
+          <div class="field">
+            <label for="hoa">Monthly HOA</label>
+            <input id="hoa" type="number" min="0" step="5" value="0" />
+          </div>
+          <div class="field">
+            <label for="pmiToggle">Show PMI / MI?</label>
+            <select id="pmiToggle">
+              <option value="true" selected>Yes</option>
+              <option value="false">No</option>
+            </select>
           </div>
         </div>
 
         <!-- Program‑specific panels -->
         <div id="panelCONV" class="program-panel">
-          <h3>Conventional Options</h3>
-          <div class="grid three-col">
-            <label class="checkbox"><input id="pmiToggle" type="checkbox" checked /> PMI enabled</label>
+          <div class="grid two-col">
             <label class="checkbox"><input id="dtiOver45" type="checkbox" /> DTI &gt; 45%</label>
             <label class="checkbox"><input id="twoPlusBorrowers" type="checkbox" /> 2+ Borrowers</label>
           </div>
         </div>
 
         <div id="panelFHA" class="program-panel hidden">
-          <h3>FHA Options</h3>
           <div class="grid two-col">
             <label class="checkbox"><input id="financeUfmip" type="checkbox" checked /> Finance UFMIP</label>
             <div class="field">
@@ -165,7 +182,6 @@
         </div>
 
         <div id="panelVA" class="program-panel hidden">
-          <h3>VA Options</h3>
           <div class="grid two-col">
             <label class="checkbox"><input id="vaExempt" type="checkbox" /> Funding Fee Exempt</label>
             <label class="checkbox"><input id="vaFirstUse" type="checkbox" checked /> First Use</label>
@@ -173,7 +189,6 @@
         </div>
 
         <div id="panelDSCR" class="program-panel hidden">
-          <h3>DSCR Options</h3>
           <div class="grid two-col">
             <div class="field">
               <label for="dscrRatio">DSCR Ratio</label>
@@ -184,15 +199,14 @@
               <input id="dscrPrepay" type="text" placeholder="e.g., 3yr, 5yr (not used yet)" disabled />
             </div>
           </div>
-          <p class="muted">
-            Note: DSCR par should follow Conv consumer par + 0.50% spread (verified on backend).
-          </p>
+          <p class="muted">Note: DSCR par should follow Conv consumer par + 0.50% spread.</p>
         </div>
 
         <!-- Actions -->
-        <div class="buttons">
-          <button id="btnGetResults" type="button" class="primary">Get My Results</button>
+        <div class="buttons row">
+          <button id="btnGetResults" type="button" class="primary" disabled>Get My Results</button>
           <button id="btnCalculate" type="button" class="primary" disabled>Calculate</button>
+          <button id="btnReset" type="button" class="ghost">Reset</button>
           <button id="btnSave" type="button" class="secondary" disabled>Save Quote</button>
         </div>
         <div id="statusArea" class="status" role="status" aria-live="polite"></div>
@@ -201,7 +215,7 @@
 
     <!-- Results -->
     <section class="card">
-      <h2>Results</h2>
+      <h2 class="section-title">Results</h2>
       <div id="results" class="results">
         <div class="placeholder">Results will appear here after pricing…</div>
       </div>
@@ -209,7 +223,7 @@
     </section>
   </main>
 
-  <!-- Lead Modal (Gate) — NO ZIP here -->
+  <!-- Lead Modal (gate) — no ZIP -->
   <dialog id="leadModal" aria-labelledby="leadModalTitle">
     <form id="leadForm" method="dialog">
       <h2 id="leadModalTitle">Get your estimate</h2>
@@ -218,60 +232,4 @@
       <div class="grid two-col">
         <div class="field">
           <label for="leadFirst">First name</label>
-          <input id="leadFirst" type="text" autocomplete="given-name" required />
-        </div>
-        <div class="field">
-          <label for="leadLast">Last name</label>
-          <input id="leadLast" type="text" autocomplete="family-name" />
-        </div>
-        <div class="field">
-          <label for="leadPhone">Phone</label>
-          <input id="leadPhone" type="tel" autocomplete="tel" placeholder="e.g., (480) 555‑1234" />
-        </div>
-        <div class="field">
-          <label for="leadEmail">Email</label>
-          <input id="leadEmail" type="email" autocomplete="email" required placeholder="e.g., you@email.com" />
-        </div>
-        <div class="field">
-          <label for="leadTimeline">Timeline</label>
-          <select id="leadTimeline">
-            <option value="0-30d">0–30 days</option>
-            <option value="30-90d" selected>30–90 days</option>
-            <option value="90d+">90+ days</option>
-            <option value="just-looking">Just looking</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="leadTextOK">Text updates?</label>
-          <select id="leadTextOK">
-            <option value="Yes" selected>Yes</option>
-            <option value="No">No</option>
-          </select>
-        </div>
-      </div>
-
-      <p class="muted" style="margin-top:8px;">
-        By submitting, you agree AZM Lending may contact you about mortgage options.
-        (Standard messaging/data rates may apply.)
-      </p>
-
-      <div class="buttons right">
-        <button type="button" id="leadCancel" class="ghost">Not now</button>
-        <button type="submit" class="primary">Unlock &amp; Show Results</button>
-      </div>
-      <div id="leadStatus" class="muted" aria-live="polite"></div>
-    </form>
-  </dialog>
-
-  <footer class="site-footer">
-    <div>
-      <span id="footerVersion">UI v0.1.1</span>
-      <span aria-hidden="true">•</span>
-      <span>AZM</span>
-    </div>
-  </footer>
-
-  <!-- App -->
-  <script src="app.js"></script>
-</body>
-</html>
+          <input id="leadFirst
