@@ -4,8 +4,7 @@
   <meta charset="utf-8" />
   <title>AZM Mortgage Calculator (Live API)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- CSS -->
-  <link rel="stylesheet" href="styles.css" />
+  styles.css
 </head>
 <body class="light">
   <header class="site-header">
@@ -18,29 +17,14 @@
   </header>
 
   <main>
-    <!-- Config block (read-only for devs) -->
+    <!-- Config (read-only) -->
     <section class="card config">
       <div class="config-grid">
-        <div>
-          <label>Rates API (WS‑1)</label>
-          <input id="cfgRatesUrl" type="text" readonly />
-        </div>
-        <div>
-          <label>Pricing API (WS‑2)</label>
-          <input id="cfgPricingUrl" type="text" readonly />
-        </div>
-        <div>
-          <label>Leads API (WS‑3)</label>
-          <input id="cfgLeadsUrl" type="text" readonly />
-        </div>
-        <div>
-          <label>LLPA/PMI Sheet ID</label>
-          <input id="cfgLlpaSheet" type="text" readonly />
-        </div>
-        <div>
-          <label>Leads DB Sheet ID</label>
-          <input id="cfgLeadsSheet" type="text" readonly />
-        </div>
+        <div><label>Rates API (WS‑1)</label><input id="cfgRatesUrl" readonly /></div>
+        <div><label>Pricing API (WS‑2)</label><input id="cfgPricingUrl" readonly /></div>
+        <div><label>Leads API (WS‑3)</label><input id="cfgLeadsUrl" readonly /></div>
+        <div><label>LLPA/PMI Sheet ID</label><input id="cfgLlpaSheet" readonly /></div>
+        <div><label>Leads DB Sheet ID</label><input id="cfgLeadsSheet" readonly /></div>
       </div>
     </section>
 
@@ -50,7 +34,7 @@
         <div class="grid two-col">
           <div class="field">
             <label for="program">Program</label>
-            <select id="program" name="program" required>
+            <select id="program" required>
               <option value="CONV30" selected>Conventional</option>
               <option value="FHA30">FHA</option>
               <option value="VA30">VA</option>
@@ -60,7 +44,7 @@
 
           <div class="field">
             <label for="txn">Transaction Type</label>
-            <select id="txn" name="txn" required>
+            <select id="txn" required>
               <option value="PURCHASE" selected>Purchase</option>
               <option value="RT_REFI">Refi (Rate/Term)</option>
               <option value="CO_REFI">Refi (Cash‑Out)</option>
@@ -174,10 +158,7 @@
         <div id="panelFHA" class="program-panel hidden">
           <div class="grid two-col">
             <label class="checkbox"><input id="financeUfmip" type="checkbox" checked /> Finance UFMIP</label>
-            <div class="field">
-              <label for="annualMip">Annual MIP (%)</label>
-              <input id="annualMip" type="number" min="0" max="2" step="0.01" value="0.55" />
-            </div>
+            <div class="field"><label for="annualMip">Annual MIP (%)</label><input id="annualMip" type="number" min="0" max="2" step="0.01" value="0.55" /></div>
           </div>
         </div>
 
@@ -190,14 +171,8 @@
 
         <div id="panelDSCR" class="program-panel hidden">
           <div class="grid two-col">
-            <div class="field">
-              <label for="dscrRatio">DSCR Ratio</label>
-              <input id="dscrRatio" type="number" min="0.75" max="2.0" step="0.05" value="1.25" />
-            </div>
-            <div class="field">
-              <label for="dscrPrepay">Prepay Term (future)</label>
-              <input id="dscrPrepay" type="text" placeholder="e.g., 3yr, 5yr (not used yet)" disabled />
-            </div>
+            <div class="field"><label for="dscrRatio">DSCR Ratio</label><input id="dscrRatio" type="number" min="0.75" max="2.0" step="0.05" value="1.25" /></div>
+            <div class="field"><label for="dscrPrepay">Prepay Term (future)</label><input id="dscrPrepay" type="text" placeholder="e.g., 3yr, 5yr (not used yet)" disabled /></div>
           </div>
           <p class="muted">Note: DSCR par should follow Conv consumer par + 0.50% spread.</p>
         </div>
@@ -216,9 +191,7 @@
     <!-- Results -->
     <section class="card">
       <h2 class="section-title">Results</h2>
-      <div id="results" class="results">
-        <div class="placeholder">Results will appear here after pricing…</div>
-      </div>
+      <div id="results" class="results"><div class="placeholder">Results will appear here after pricing…</div></div>
       <div id="lastQuoted" class="timestamp"></div>
     </section>
   </main>
@@ -230,6 +203,42 @@
       <p class="muted">Enter your info once. After that, the calculator auto‑recalculates as you tweak numbers.</p>
 
       <div class="grid two-col">
+        <div class="field"><label for="leadFirst">First name</label><input id="leadFirst" type="text" autocomplete="given-name" required /></div>
+        <div class="field"><label for="leadLast">Last name</label><input id="leadLast" type="text" autocomplete="family-name" /></div>
+        <div class="field"><label for="leadPhone">Phone</label><input id="leadPhone" type="tel" autocomplete="tel" placeholder="e.g., (480) 555‑1234" /></div>
+        <div class="field"><label for="leadEmail">Email</label><input id="leadEmail" type="email" autocomplete="email" required placeholder="e.g., you@email.com" /></div>
         <div class="field">
-          <label for="leadFirst">First name</label>
-          <input id="leadFirst
+          <label for="leadTimeline">Timeline</label>
+          <select id="leadTimeline">
+            <option value="0-30d">0–30 days</option>
+            <option value="30-90d" selected>30–90 days</option>
+            <option value="90d+">90+ days</option>
+            <option value="just-looking">Just looking</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="leadTextOK">Text updates?</label>
+          <select id="leadTextOK">
+            <option value="Yes" selected>Yes</option>
+            <option value="No">No</option>
+          </select>
+        </div>
+      </div>
+
+      <p class="muted" style="margin-top:8px;">By submitting, you agree AZM Lending may contact you about mortgage options. (Standard messaging/data rates may apply.)</p>
+
+      <div class="buttons right">
+        <button type="button" id="leadCancel" class="ghost">Not now</button>
+        <button type="submit" class="primary">Unlock &amp; Show Results</button>
+      </div>
+      <div id="leadStatus" class="muted" aria-live="polite"></div>
+    </form>
+  </dialog>
+
+  <footer class="site-footer">
+    <div><span id="footerVersion">UI v0.1.4</span><span aria-hidden="true">•</span><span>AZM</span></div>
+  </footer>
+
+  app.js</script>
+</body>
+</html>
