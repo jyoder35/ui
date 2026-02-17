@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <title>AZM – Workspace 4 • Lead‑Gated Mortgage Calculator</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="./styles.css" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="app-header">
@@ -14,22 +14,22 @@
 
   <main class="container">
 
-    <!-- Dev Config (visible only when dev mode is on) -->
+    <!-- ---------- DEV CONFIG (appears only in dev mode) ---------- -->
     <section class="card" id="devConfig" style="display:none">
       <h2>Developer Config</h2>
       <div class="grid grid-2">
         <div class="form-control">
           <label for="ws3BaseInput">WS‑3 Base URL</label>
           <input id="ws3BaseInput" type="text" placeholder="https://.../exec" />
-          <div class="helper">Overrides baked-in WS‑3 for both <code>upsertLead</code> and <code>saveQuote</code>.</div>
+          <div class="helper">Overrides baked‑in WS‑3 for upsertLead + saveQuote.</div>
         </div>
+
         <div class="form-control">
-          <label>Dev Mode</label>
+          <label>Dev mode</label>
           <div class="pill-group" id="devModeGroup">
-            <button type="button" class="pill" data-value="on">On</button>
-            <button type="button" class="pill active" data-value="off">Off</button>
+            <button class="pill" data-value="on">On</button>
+            <button class="pill active" data-value="off">Off</button>
           </div>
-          <div class="helper">Append <code>?dev=1</code> to URL or flip “On” to persist dev mode in <code>localStorage</code>.</div>
         </div>
       </div>
 
@@ -37,29 +37,30 @@
         <label for="tablesJson">State Tables JSON</label>
         <textarea id="tablesJson" rows="10" placeholder='Paste either:
 {
-  "STATE_TAX_RATE_2023_PCT": { "AZ":0.500, ... },
+  "STATE_TAX_RATE_2023_PCT": { "AZ":0.5, ... },
   "HOI_2022": { "Arizona":1018, ... }
 }
 or just one of those objects.'></textarea>
         <div class="helper">
-          HOI is the average annual premium at $300k coverage (2022), scaled by <code>value / 300000</code>, rounded to $25.
-          Taxes use state % of property value (2023). ZIP → state is resolved via zippopotam.us.
+          HOI is the avg annual premium for $300k coverage (2022), scaled by value.  
+          Taxes = value × state % (2023).
         </div>
       </div>
 
       <div class="actions">
-        <button id="applyConfigBtn" class="primary">Apply &amp; Save</button>
+        <button id="applyConfigBtn" class="primary">Apply & Save</button>
         <button id="resetConfigBtn" class="ghost">Reset Overrides</button>
       </div>
       <div class="status-line" id="devStatus"></div>
     </section>
 
-    <!-- Top: Program / Txn / Term / ZIP -->
+    <!-- ------------------ PROGRAM / TXN / TERM / ZIP ------------------- -->
     <section class="card">
       <h2>Program / Transaction / Term / ZIP</h2>
+
       <div class="grid grid-4">
         <div class="form-control">
-          <label for="program">Program</label>
+          <label>Program</label>
           <select id="program">
             <option value="CONV30">Conventional 30</option>
             <option value="CONV15">Conventional 15</option>
@@ -72,24 +73,24 @@ or just one of those objects.'></textarea>
         <div class="form-control">
           <label>Transaction</label>
           <div class="pill-group" id="txnGroup">
-            <button type="button" class="pill active" data-value="PURCHASE">Purchase</button>
-            <button type="button" class="pill" data-value="REFI">Refi</button>
+            <button class="pill active" data-value="PURCHASE">Purchase</button>
+            <button class="pill" data-value="REFI">Refi</button>
           </div>
         </div>
 
         <div class="form-control">
           <label>Term</label>
           <div class="pill-group" id="termGroup">
-            <button type="button" class="pill active" data-value="360">30‑yr</button>
-            <button type="button" class="pill" data-value="180">15‑yr</button>
+            <button class="pill active" data-value="360">30‑yr</button>
+            <button class="pill" data-value="180">15‑yr</button>
           </div>
         </div>
 
         <div class="form-control">
-          <label for="propZip">Property ZIP</label>
+          <label>Property ZIP</label>
           <div class="zip-row">
-            <input id="propZip" type="text" inputmode="numeric" maxlength="5" class="needs-update" value="85254" />
-            <div class="city-state" id="cityState">—</div>
+            <input id="propZip" maxlength="5" value="85254" class="needs-update" />
+            <div id="cityState" class="city-state">—</div>
           </div>
           <div id="zipMsg" class="msg" style="display:none"></div>
           <div class="helper">Change ZIP to a new valid 5‑digit value to enable results.</div>
@@ -99,191 +100,209 @@ or just one of those objects.'></textarea>
       <div class="actions">
         <button id="gateBtn" class="primary" disabled>Get My Results</button>
       </div>
-      <div class="status-line" id="statusTop"></div>
+      <div id="statusTop" class="status-line"></div>
     </section>
 
-    <!-- Loan Structure -->
+    <!-- ------------------- LOAN STRUCTURE --------------------- -->
     <section class="card">
       <h2>Loan Structure</h2>
+
       <div class="grid grid-3">
         <div class="form-control">
-          <label for="propValue">Property Value</label>
-          <input id="propValue" type="text" inputmode="decimal" value="$500,000" />
+          <label>Property Value</label>
+          <input id="propValue" value="$500,000" />
         </div>
+
         <div class="form-control">
-          <label for="ltvPct">LTV %</label>
-          <input id="ltvPct" type="text" inputmode="decimal" value="80%" />
+          <label>LTV %</label>
+          <input id="ltvPct" value="80%" />
         </div>
+
         <div class="form-control">
-          <label for="loanAmt">Loan Amount</label>
-          <input id="loanAmt" type="text" inputmode="decimal" value="$400,000" />
+          <label>Loan Amount</label>
+          <input id="loanAmt" value="$400,000" />
         </div>
       </div>
     </section>
 
-    <!-- Credit & Points -->
+    <!-- ------------------- CREDIT & POINTS --------------------- -->
     <section class="card">
-      <h2>Credit &amp; Points</h2>
+      <h2>Credit & Points</h2>
+
       <div class="grid grid-2">
         <div class="form-control">
-          <label for="fico">FICO</label>
+          <label>FICO</label>
           <div class="range-row">
             <input id="fico" type="range" min="580" max="820" step="10" value="740" />
-            <input id="ficoNum" type="number" min="300" max="850" step="1" value="740" class="chip" />
+            <input id="ficoNum" type="number" value="740" class="chip" />
           </div>
         </div>
+
         <div class="form-control">
-          <label for="points">Borrower Points</label>
+          <label>Borrower Points</label>
           <div class="range-row">
-            <input id="points" type="range" min="-3.0" max="3.0" step="0.125" value="0.0" />
-            <input id="pointsNum" type="number" min="-5" max="5" step="0.125" value="0.0" class="chip" />
+            <input id="points" type="range" min="-3" max="3" step="0.125" value="0" />
+            <input id="pointsNum" type="number" value="0" class="chip" />
           </div>
         </div>
       </div>
 
       <div class="grid grid-3">
         <div class="form-control">
-          <label>PMI (Conventional)</label>
+          <label>PMI</label>
           <div class="pill-group" id="pmiToggle">
-            <button type="button" class="pill active" data-value="true">Yes</button>
-            <button type="button" class="pill" data-value="false">No</button>
+            <button class="pill active" data-value="true">Yes</button>
+            <button class="pill" data-value="false">No</button>
           </div>
         </div>
+
         <div class="form-control">
           <label>DTI &gt; 45%</label>
           <div class="pill-group" id="dti45">
-            <button type="button" class="pill" data-value="true">Yes</button>
-            <button type="button" class="pill active" data-value="false">No</button>
+            <button class="pill" data-value="true">Yes</button>
+            <button class="pill active" data-value="false">No</button>
           </div>
         </div>
+
         <div class="form-control">
           <label>2+ Borrowers</label>
           <div class="pill-group" id="twoBorrowers">
-            <button type="button" class="pill" data-value="true">Yes</button>
-            <button type="button" class="pill active" data-value="false">No</button>
+            <button class="pill" data-value="true">Yes</button>
+            <button class="pill active" data-value="false">No</button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Taxes & Insurance -->
+    <!-- ---------------- TAXES & INSURANCE ------------------ -->
     <section class="card">
-      <h2>Taxes &amp; Insurance</h2>
+      <h2>Taxes & Insurance</h2>
+
       <div class="grid grid-3">
         <div class="form-control">
-          <label for="taxes">Annual Taxes <span class="muted">(Est.)</span></label>
+          <label>Annual Taxes (Est.)</label>
           <div class="with-chip">
-            <input id="taxes" type="text" inputmode="decimal" value="$0" />
-            <button id="taxAutoChip" type="button" class="mini-chip" title="Toggle Auto">Auto</button>
+            <input id="taxes" value="$0" />
+            <button id="taxAutoChip" class="mini-chip active">Auto</button>
           </div>
         </div>
+
         <div class="form-control">
-          <label for="ins">Annual HOI <span class="muted">(Est.)</span></label>
+          <label>Annual HOI (Est.)</label>
           <div class="with-chip">
-            <input id="ins" type="text" inputmode="decimal" value="$0" />
-            <button id="insAutoChip" type="button" class="mini-chip" title="Toggle Auto">Auto</button>
+            <input id="ins" value="$0" />
+            <button id="insAutoChip" class="mini-chip active">Auto</button>
           </div>
         </div>
+
         <div class="form-control">
-          <label for="hoa">Annual HOA</label>
-          <input id="hoa" type="text" inputmode="decimal" value="$0" />
+          <label>Annual HOA</label>
+          <input id="hoa" value="$0" />
         </div>
       </div>
-      <div class="helper">Taxes/HOI auto‑estimate from state when ZIP or value changes; you can override manually (toggle Auto).</div>
+
+      <div class="helper">Auto‑estimated using state tax % and HOI premiums; editable.</div>
     </section>
 
-    <!-- Program-specific panels -->
+    <!-- -------- FHA Panel -------- -->
     <section class="card" id="panelFHA" hidden>
       <h2>FHA Options</h2>
-      <div class="grid grid-3">
+      <div class="grid grid-2">
         <div class="form-control">
           <label>Finance UFMIP</label>
           <div class="pill-group" id="financeUfmip">
-            <button type="button" class="pill active" data-value="true">Yes</button>
-            <button type="button" class="pill" data-value="false">No</button>
+            <button class="pill active" data-value="true">Yes</button>
+            <button class="pill" data-value="false">No</button>
           </div>
         </div>
+
         <div class="form-control">
-          <label for="annualMip">Annual MIP %</label>
+          <label>Annual MIP %</label>
           <input id="annualMip" type="number" step="0.01" value="0.55" />
         </div>
       </div>
     </section>
 
+    <!-- -------- VA Panel -------- -->
     <section class="card" id="panelVA" hidden>
       <h2>VA Options</h2>
-      <div class="grid grid-3">
+      <div class="grid grid-2">
         <div class="form-control">
           <label>Funding Fee Exempt</label>
           <div class="pill-group" id="vaExempt">
-            <button type="button" class="pill" data-value="true">Yes</button>
-            <button type="button" class="pill active" data-value="false">No</button>
+            <button class="pill" data-value="true">Yes</button>
+            <button class="pill active" data-value="false">No</button>
           </div>
         </div>
+
         <div class="form-control">
           <label>First Use</label>
           <div class="pill-group" id="vaFirstUse">
-            <button type="button" class="pill active" data-value="true">Yes</button>
-            <button type="button" class="pill" data-value="false">No</button>
+            <button class="pill active" data-value="true">Yes</button>
+            <button class="pill" data-value="false">No</button>
           </div>
         </div>
       </div>
     </section>
 
+    <!-- -------- DSCR Panel -------- -->
     <section class="card" id="panelDSCR" hidden>
       <h2>DSCR Options</h2>
-      <div class="grid grid-3">
-        <div class="form-control">
-          <label for="dscrRatio">DSCR Ratio</label>
-          <input id="dscrRatio" type="number" step="0.05" value="1.25" />
-        </div>
+      <div class="form-control">
+        <label>DSCR Ratio</label>
+        <input id="dscrRatio" type="number" step="0.05" value="1.25" />
       </div>
-      <div class="helper">DSCR par uses backend spread logic (+0.50% over consumer par).</div>
     </section>
 
-    <!-- Results -->
+    <!-- ---------------- RESULTS ------------------ -->
     <section class="card">
       <h2>Results</h2>
+
       <div id="results" class="results">
-        <div class="muted">Results will appear here after you get gated and priced.</div>
+        <div class="muted">Results will appear here after pricing.</div>
       </div>
+
       <div class="actions">
         <button id="saveQuoteBtn" class="secondary" disabled>Save Quote</button>
       </div>
-      <div class="status-line" id="statusBottom"></div>
+
+      <div id="statusBottom" class="status-line"></div>
     </section>
 
   </main>
 
-  <!-- Lead Gate Modal -->
-  <div id="leadModal" class="modal hidden" aria-hidden="true">
+  <!-- ---------------- LEAD MODAL ---------------- -->
+  <div id="leadModal" class="modal hidden">
     <div class="modal-backdrop"></div>
-    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="leadTitle">
-      <h3 id="leadTitle">Get My Results</h3>
+    <div class="modal-card">
+      <h3>Get My Results</h3>
+
       <form id="leadForm">
         <div class="grid grid-2">
           <div class="form-control">
-            <label for="firstName">First name</label>
-            <input id="firstName" type="text" required />
+            <label>First Name</label>
+            <input id="firstName" required />
           </div>
           <div class="form-control">
-            <label for="lastName">Last name</label>
-            <input id="lastName" type="text" required />
+            <label>Last Name</label>
+            <input id="lastName" required />
           </div>
         </div>
+
         <div class="grid grid-2">
           <div class="form-control">
-            <label for="phone">Phone</label>
-            <input id="phone" type="tel" placeholder="(555) 555-5555" />
+            <label>Phone</label>
+            <input id="phone" />
           </div>
           <div class="form-control">
-            <label for="email">Email</label>
+            <label>Email</label>
             <input id="email" type="email" required />
           </div>
         </div>
+
         <div class="grid grid-2">
           <div class="form-control">
-            <label for="timeline">Timeline</label>
+            <label>Timeline</label>
             <select id="timeline" required>
               <option value="">Choose…</option>
               <option>ASAP</option>
@@ -293,24 +312,26 @@ or just one of those objects.'></textarea>
               <option>Just exploring</option>
             </select>
           </div>
+
           <div class="form-control">
             <label>Text updates</label>
             <div class="pill-group" id="textUpdates">
-              <button type="button" class="pill" data-value="true">Yes</button>
-              <button type="button" class="pill active" data-value="false">No</button>
+              <button class="pill" data-value="true">Yes</button>
+              <button class="pill active" data-value="false">No</button>
             </div>
           </div>
         </div>
 
         <div class="modal-actions">
-          <button type="button" id="cancelLead" class="ghost">Cancel</button>
+          <button id="cancelLead" type="button" class="ghost">Cancel</button>
           <button type="submit" class="primary">Continue</button>
         </div>
-        <div class="status-line" id="statusLead"></div>
+
+        <div id="statusLead" class="status-line"></div>
       </form>
     </div>
   </div>
 
-  <script src="./app.js" defer></script>
+  <script src="app.js"></script>
 </body>
 </html>
