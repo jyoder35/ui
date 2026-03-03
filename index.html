@@ -2,336 +2,334 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>AZM – Workspace 4 • Lead‑Gated Mortgage Calculator</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>AZM – W4 Lead‑Gated Mortgage UI</title>
+
+  <!-- Correct CSS include -->
+  styles.css
+
+  <!-- CSP (relaxed for Apps Script; remove while iterating locally if desired) -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self';
+    img-src 'self' data:;
+    style-src 'self' 'unsafe-inline';
+    script-src 'self';
+    connect-src 'self' https://api.zippopotam.us https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com;">
 </head>
 <body>
-  <header class="app-header">
-    <h1>Mortgage Calculator (Lead‑Gated)</h1>
-    <div class="timestamp" id="lastQuoted">Last quoted: —</div>
+  <header class="topbar">
+    <div class="container">
+      <h1>AZM • Workspace 4 — Lead‑Gated Calculator</h1>
+      <div class="status" id="statusLine">Ready</div>
+    </div>
   </header>
 
-  <main class="container">
-
-    <!-- ---------- DEV CONFIG (appears only in dev mode) ---------- -->
-    <section class="card" id="devConfig" style="display:none">
-      <h2>Developer Config</h2>
-      <div class="grid grid-2">
-        <div class="form-control">
-          <label for="ws3BaseInput">WS‑3 Base URL</label>
-          <input id="ws3BaseInput" type="text" placeholder="https://.../exec" />
-          <div class="helper">Overrides baked‑in WS‑3 for upsertLead + saveQuote.</div>
-        </div>
-
-        <div class="form-control">
-          <label>Dev mode</label>
-          <div class="pill-group" id="devModeGroup">
-            <button class="pill" data-value="on">On</button>
-            <button class="pill active" data-value="off">Off</button>
+  <main class="container app">
+    <!-- Developer Tools -->
+    <section class="panel panel-dev">
+      <div class="panel-title">Developer Tools</div>
+      <div class="dev-row">
+        <label class="inline">
+          <input type="checkbox" id="devShowPayloads" />
+          Show request/response payloads (pricing & saveQuote)
+        </label>
+        <span class="muted">For debugging only; no network changes.</span>
+      </div>
+      <details id="devPayloads" class="dev-payloads">
+        <summary>Payload Inspector</summary>
+        <div class="grid grid-2">
+          <div>
+            <div class="subhead">Last Pricing Request</div>
+            <pre id="devPriceReq" class="codeblock small">// none</pre>
+            <div class="subhead">Last Pricing Response</div>
+            <pre id="devPriceRes" class="codeblock small">// none</pre>
+            <div class="subhead">Last Par Pricing Request</div>
+            <pre id="devPriceReqPar" class="codeblock small">// none</pre>
+            <div class="subhead">Last Par Pricing Response</div>
+            <pre id="devPriceResPar" class="codeblock small">// none</pre>
+          </div>
+          <div>
+            <div class="subhead">Last SaveQuote Request</div>
+            <pre id="devSaveReq" class="codeblock small">// none</pre>
+            <div class="subhead">Last SaveQuote Response</div>
+            <pre id="devSaveRes" class="codeblock small">// none</pre>
           </div>
         </div>
-      </div>
-
-      <div class="form-control">
-        <label for="tablesJson">State Tables JSON</label>
-        <textarea id="tablesJson" rows="10" placeholder='Paste either:
-{
-  "STATE_TAX_RATE_2023_PCT": { "AZ":0.5, ... },
-  "HOI_2022": { "Arizona":1018, ... }
-}
-or just one of those objects.'></textarea>
-        <div class="helper">
-          HOI is the avg annual premium for $300k coverage (2022), scaled by value.  
-          Taxes = value × state % (2023).
-        </div>
-      </div>
-
-      <div class="actions">
-        <button id="applyConfigBtn" class="primary">Apply & Save</button>
-        <button id="resetConfigBtn" class="ghost">Reset Overrides</button>
-      </div>
-      <div class="status-line" id="devStatus"></div>
+      </details>
     </section>
 
-    <!-- ------------------ PROGRAM / TXN / TERM / ZIP ------------------- -->
-    <section class="card">
-      <h2>Program / Transaction / Term / ZIP</h2>
-
-      <div class="grid grid-4">
-        <div class="form-control">
-          <label>Program</label>
+    <!-- 1) Program / Transaction / Term / ZIP -->
+    <section class="panel">
+      <div class="panel-title">Program / Transaction / Term / ZIP</div>
+      <div class="grid grid-2">
+        <div class="form-field">
+          <label for="program">Program</label>
           <select id="program">
-            <option value="CONV30">Conventional 30</option>
-            <option value="CONV15">Conventional 15</option>
-            <option value="FHA30">FHA 30</option>
-            <option value="VA30">VA 30</option>
-            <option value="DSCR30">DSCR 30</option>
+            <option value="CONV" selected>Conventional</option>
+            <option value="FHA">FHA</option>
+            <option value="VA">VA</option>
+            <option value="DSCR">DSCR</option>
           </select>
         </div>
-
-        <div class="form-control">
-          <label>Transaction</label>
-          <div class="pill-group" id="txnGroup">
-            <button class="pill active" data-value="PURCHASE">Purchase</button>
-            <button class="pill" data-value="REFI">Refi</button>
-          </div>
+        <div class="form-field">
+          <label for="txn">Transaction Type</label>
+          <select id="txn"></select>
         </div>
-
-        <div class="form-control">
-          <label>Term</label>
-          <div class="pill-group" id="termGroup">
-            <button class="pill active" data-value="360">30‑yr</button>
-            <button class="pill" data-value="180">15‑yr</button>
-          </div>
+        <div class="form-field">
+          <label for="term">Term</label>
+          <select id="term" disabled class="locked">
+            <option value="360" selected>30‑Year Fixed</option>
+          </select>
         </div>
-
-        <div class="form-control">
-          <label>Property ZIP</label>
-          <div class="zip-row">
-            <input id="propZip" maxlength="5" value="85254" class="needs-update" />
-            <div id="cityState" class="city-state">—</div>
-          </div>
-          <div id="zipMsg" class="msg" style="display:none"></div>
-          <div class="helper">Change ZIP to a new valid 5‑digit value to enable results.</div>
-        </div>
-      </div>
-
-      <div class="actions">
-        <button id="gateBtn" class="primary" disabled>Get My Results</button>
-      </div>
-      <div id="statusTop" class="status-line"></div>
-    </section>
-
-    <!-- ------------------- LOAN STRUCTURE --------------------- -->
-    <section class="card">
-      <h2>Loan Structure</h2>
-
-      <div class="grid grid-3">
-        <div class="form-control">
-          <label>Property Value</label>
-          <input id="propValue" value="$500,000" />
-        </div>
-
-        <div class="form-control">
-          <label>LTV %</label>
-          <input id="ltvPct" value="80%" />
-        </div>
-
-        <div class="form-control">
-          <label>Loan Amount</label>
-          <input id="loanAmt" value="$400,000" />
+        <div class="form-field">
+          <label for="zip">Property ZIP</label>
+          <input id="zip" inputmode="numeric" maxlength="10" placeholder="e.g., 85254" class="placeholder-required" />
+          <div id="zipMsg" class="msg" style="display:none;"></div>
         </div>
       </div>
     </section>
 
-    <!-- ------------------- CREDIT & POINTS --------------------- -->
-    <section class="card">
-      <h2>Credit & Points</h2>
-
+    <!-- 2) Loan Structure -->
+    <section class="panel">
+      <div class="panel-title" id="structureTitle">Loan Structure</div>
       <div class="grid grid-2">
-        <div class="form-control">
-          <label>FICO</label>
-          <div class="range-row">
-            <input id="fico" type="range" min="580" max="820" step="10" value="740" />
-            <input id="ficoNum" type="number" value="740" class="chip" />
-          </div>
+        <div class="form-field">
+          <label for="value" id="valueLabel">Property Value ($)</label>
+          <input id="value" inputmode="decimal" value="500000" />
         </div>
-
-        <div class="form-control">
-          <label>Borrower Points</label>
-          <div class="range-row">
-            <input id="points" type="range" min="-3" max="3" step="0.125" value="0" />
-            <input id="pointsNum" type="number" value="0" class="chip" />
-          </div>
+        <div class="form-field">
+          <label for="ltv">LTV (%)</label>
+          <input id="ltv" inputmode="decimal" value="80" />
+          <div id="ltvMsg" class="msg" style="display:none;"></div>
+        </div>
+        <div class="form-field">
+          <label for="loan" id="loanLabel">Base Loan Amount ($)</label>
+          <input id="loan" inputmode="decimal" value="400000" />
+        </div>
+        <div class="form-field">
+          <label for="equity" id="equityLabel">Equity ($)</label>
+          <input id="equity" inputmode="decimal" value="100000" />
         </div>
       </div>
+    </section>
 
+    <!-- 3) Taxes & Insurance -->
+    <section class="panel">
+      <div class="panel-title">Taxes & Insurance (Estimated)</div>
       <div class="grid grid-3">
-        <div class="form-control">
-          <label>PMI</label>
-          <div class="pill-group" id="pmiToggle">
-            <button class="pill active" data-value="true">Yes</button>
-            <button class="pill" data-value="false">No</button>
-          </div>
+        <div class="form-field">
+          <label for="taxes">Annual Taxes ($)</label>
+          <input id="taxes" inputmode="decimal" />
         </div>
-
-        <div class="form-control">
-          <label>DTI &gt; 45%</label>
-          <div class="pill-group" id="dti45">
-            <button class="pill" data-value="true">Yes</button>
-            <button class="pill active" data-value="false">No</button>
-          </div>
+        <div class="form-field">
+          <label for="ins">Annual HOI ($)</label>
+          <input id="ins" inputmode="decimal" />
         </div>
-
-        <div class="form-control">
-          <label>2+ Borrowers</label>
-          <div class="pill-group" id="twoBorrowers">
-            <button class="pill" data-value="true">Yes</button>
-            <button class="pill active" data-value="false">No</button>
-          </div>
+        <div class="form-field">
+          <label for="hoa">Annual HOA ($)</label>
+          <input id="hoa" inputmode="decimal" value="0" />
         </div>
       </div>
     </section>
 
-    <!-- ---------------- TAXES & INSURANCE ------------------ -->
-    <section class="card">
-      <h2>Taxes & Insurance</h2>
-
+    <!-- 4) Credit & Points -->
+    <section class="panel">
+      <div class="panel-title">Credit & Points</div>
       <div class="grid grid-3">
-        <div class="form-control">
-          <label>Annual Taxes (Est.)</label>
-          <div class="with-chip">
-            <input id="taxes" value="$0" />
-            <button id="taxAutoChip" class="mini-chip active">Auto</button>
+        <div class="form-field">
+          <label for="fico">FICO</label>
+          <div class="slider-row">
+            <!-- 300–850; reprice on change (release) only -->
+            <input type="range" id="ficoRange" min="300" max="850" step="1" value="740" />
+            <div class="chip" id="ficoChip">740</div>
           </div>
+          <input id="fico" inputmode="numeric" value="740" />
+          <div id="ficoMsg" class="msg bad" style="display:none;"></div>
         </div>
 
-        <div class="form-control">
-          <label>Annual HOI (Est.)</label>
-          <div class="with-chip">
-            <input id="ins" value="$0" />
-            <button id="insAutoChip" class="mini-chip active">Auto</button>
+        <div class="form-field">
+          <label for="points">Borrower Points (%)</label>
+          <div class="slider-row">
+            <!-- 0.5% increments -->
+            <input type="range" id="pointsRange" min="-1.0" max="3.0" step="0.5" value="0.0" />
+            <div class="chip" id="pointsChip">0.0%</div>
           </div>
+          <input id="points" inputmode="decimal" value="0.0" />
         </div>
 
-        <div class="form-control">
-          <label>Annual HOA</label>
-          <input id="hoa" value="$0" />
-        </div>
-      </div>
-
-      <div class="helper">Auto‑estimated using state tax % and HOI premiums; editable.</div>
-    </section>
-
-    <!-- -------- FHA Panel -------- -->
-    <section class="card" id="panelFHA" hidden>
-      <h2>FHA Options</h2>
-      <div class="grid grid-2">
-        <div class="form-control">
-          <label>Finance UFMIP</label>
-          <div class="pill-group" id="financeUfmip">
-            <button class="pill active" data-value="true">Yes</button>
-            <button class="pill" data-value="false">No</button>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label>Annual MIP %</label>
-          <input id="annualMip" type="number" step="0.01" value="0.55" />
-        </div>
-      </div>
-    </section>
-
-    <!-- -------- VA Panel -------- -->
-    <section class="card" id="panelVA" hidden>
-      <h2>VA Options</h2>
-      <div class="grid grid-2">
-        <div class="form-control">
-          <label>Funding Fee Exempt</label>
-          <div class="pill-group" id="vaExempt">
-            <button class="pill" data-value="true">Yes</button>
-            <button class="pill active" data-value="false">No</button>
-          </div>
-        </div>
-
-        <div class="form-control">
-          <label>First Use</label>
-          <div class="pill-group" id="vaFirstUse">
-            <button class="pill active" data-value="true">Yes</button>
-            <button class="pill" data-value="false">No</button>
+        <div class="form-field">
+          <label>Program Specific Options & Factors</label>
+          <div class="pill-group" id="progFactors"></div>
+          <!-- DSCR (shown only for DSCR via JS) -->
+          <div id="dscrWrap" style="display:none; margin-top:8px;">
+            <label for="dscrRatio">DSCR Ratio</label>
+            <input id="dscrRatio" inputmode="decimal" value="1.25" />
+            <div id="dscrMsg" class="msg bad" style="display:none;"></div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- -------- DSCR Panel -------- -->
-    <section class="card" id="panelDSCR" hidden>
-      <h2>DSCR Options</h2>
-      <div class="form-control">
-        <label>DSCR Ratio</label>
-        <input id="dscrRatio" type="number" step="0.05" value="1.25" />
-      </div>
+    <!-- Actions -->
+    <section class="actions actions-bottom">
+      <button id="btnGate" class="btn btn-primary" disabled title="Enter a valid ZIP to continue">Get My Results</button>
+      <button id="btnRecalc" class="btn" disabled>
+        <span id="recalcDot" class="dot" aria-hidden="true"></span>
+        Re‑Calculate
+      </button>
+      <button id="btnSave" class="btn" disabled>Save Quote</button>
+      <button id="btnReset" class="btn btn-ghost">Reset</button>
+      <div id="lastQuoted" class="timestamp"></div>
     </section>
 
-    <!-- ---------------- RESULTS ------------------ -->
-    <section class="card">
-      <h2>Results</h2>
+    <!-- Results -->
+    <section class="panel">
+      <div class="panel-title">Results</div>
 
-      <div id="results" class="results">
-        <div class="muted">Results will appear here after pricing.</div>
+      <!-- Row 1: KPIs (2 columns) -->
+      <div class="results-summary grid grid-2">
+        <div class="kpi">
+          <div class="kpi-label">Estimated Interest Rate</div>
+          <div id="kpiRate" class="kpi-value">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Estimated Mortgage Payment (P&amp;I + MI)</div>
+          <div id="kpiTotal" class="kpi-value">—</div>
+        </div>
       </div>
 
-      <div class="actions">
-        <button id="saveQuoteBtn" class="secondary" disabled>Save Quote</button>
+      <!-- Row 2: Payment Cards (2 columns) -->
+      <div class="results-cards grid grid-2">
+        <div class="result-card" id="cardWith">
+          <div class="card-title">Selected Price</div>
+          <div class="card-body">
+            <div class="kv"><span>Financed Loan Amount</span><span id="with_loanCalc">—</span></div>
+            <div class="kv"><span>Rate</span><span id="with_rate">—</span></div>
+            <div class="kv"><span>Total Monthly Housing Payment</span><span id="with_housing">—</span></div>
+            <div class="kv"><span>P&amp;I</span><span id="with_pi">—</span></div>
+            <div class="kv"><span>PMI / MIP</span><span id="with_mi">—</span></div>
+            <div class="kv"><span>Taxes</span><span id="with_taxes">—</span></div>
+            <div class="kv"><span>Insurance</span><span id="with_ins">—</span></div>
+            <div class="kv"><span>HOA</span><span id="with_hoa">—</span></div>
+          </div>
+        </div>
+
+        <div class="result-card" id="cardPar">
+          <div class="card-title">Par Price</div>
+          <div class="card-body">
+            <div class="kv"><span>Financed Loan Amount</span><span id="par_loanCalc">—</span></div>
+            <div class="kv"><span>Rate</span><span id="par_rate">—</span></div>
+            <div class="kv"><span>Total Monthly Housing Payment</span><span id="par_housing">—</span></div>
+            <div class="kv"><span>P&amp;I</span><span id="par_pi">—</span></div>
+            <div class="kv"><span>PMI / MIP</span><span id="par_mi">—</span></div>
+            <div class="kv"><span>Taxes</span><span id="par_taxes">—</span></div>
+            <div class="kv"><span>Insurance</span><span id="par_ins">—</span></div>
+            <div class="kv"><span>HOA</span><span id="par_hoa">—</span></div>
+          </div>
+        </div>
       </div>
 
-      <div id="statusBottom" class="status-line"></div>
+      <!-- Row 3: Delta (2 columns) -->
+      <div class="results-delta grid grid-2">
+        <div class="kpi">
+          <div class="kpi-label">Rate Cost Difference</div>
+          <div id="delta_rateCost" class="kpi-value">—</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-label">Payment Difference (Selected − Par)</div>
+          <div id="delta_payment" class="kpi-value">—</div>
+        </div>
+      </div>
+
+      <div id="loanLine" class="loanline"></div>
+      <div id="helperNotes" class="helper-notes"></div>
     </section>
-
   </main>
 
-  <!-- ---------------- LEAD MODAL ---------------- -->
-  <div id="leadModal" class="modal hidden">
-    <div class="modal-backdrop"></div>
-    <div class="modal-card">
-      <h3>Get My Results</h3>
-
-      <form id="leadForm">
-        <div class="grid grid-2">
-          <div class="form-control">
-            <label>First Name</label>
-            <input id="firstName" required />
-          </div>
-          <div class="form-control">
-            <label>Last Name</label>
-            <input id="lastName" required />
-          </div>
+  <!-- Lead Gate Modal -->
+  <div class="modal" id="leadModal" aria-hidden="true">
+    <div class="modal-backdrop" id="leadModalBackdrop"></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="leadTitle">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="leadTitle">Get My Results</div>
+          <div class="modal-subtitle">Enter your info to unlock live pricing.</div>
         </div>
+        <button class="btn-icon" id="closeLead">✕</button>
+      </div>
 
-        <div class="grid grid-2">
-          <div class="form-control">
-            <label>Phone</label>
-            <input id="phone" />
-          </div>
-          <div class="form-control">
-            <label>Email</label>
-            <input id="email" type="email" required />
-          </div>
-        </div>
-
-        <div class="grid grid-2">
-          <div class="form-control">
-            <label>Timeline</label>
-            <select id="timeline" required>
-              <option value="">Choose…</option>
-              <option>ASAP</option>
-              <option>30-60 days</option>
-              <option>60-90 days</option>
-              <option>90+ days</option>
-              <option>Just exploring</option>
-            </select>
-          </div>
-
-          <div class="form-control">
-            <label>Text updates</label>
-            <div class="pill-group" id="textUpdates">
-              <button class="pill" data-value="true">Yes</button>
-              <button class="pill active" data-value="false">No</button>
+      <form id="leadForm" novalidate>
+        <div class="modal-body">
+          <div class="grid grid-2">
+            <div class="form-field">
+              <label for="leadFirst">First name</label>
+              <input id="leadFirst" autocomplete="given-name" minlength="2" required />
+              <div id="leadFirstErr" class="msg bad" style="display:none;"></div>
+            </div>
+            <div class="form-field">
+              <label for="leadLast">Last name</label>
+              <input id="leadLast" autocomplete="family-name" minlength="2" required />
+              <div id="leadLastErr" class="msg bad" style="display:none;"></div>
             </div>
           </div>
-        </div>
 
-        <div class="modal-actions">
-          <button id="cancelLead" type="button" class="ghost">Cancel</button>
-          <button type="submit" class="primary">Continue</button>
-        </div>
+          <div class="grid grid-2">
+            <div class="form-field">
+              <label for="leadPhone">Phone</label>
+              <input id="leadPhone" inputmode="tel" placeholder="(555) 555-5555" required />
+              <div id="leadPhoneErr" class="msg bad" style="display:none;"></div>
+            </div>
+            <div class="form-field">
+              <label for="leadEmail">Email</label>
+              <input id="leadEmail" type="email" autocomplete="email" required />
+              <div id="leadEmailErr" class="msg bad" style="display:none;"></div>
+            </div>
+          </div>
 
-        <div id="statusLead" class="status-line"></div>
+          <div class="grid grid-2">
+            <div class="form-field">
+              <label for="leadTimeline">Timeline</label>
+              <select id="leadTimeline" required>
+                <option value="" selected disabled>Select…</option>
+                <option value="ASAP">ASAP</option>
+                <option value="1-3">1 to 3 months</option>
+                <option value="3-6">3 to 6 months</option>
+                <option value="RESEARCH">Just researching</option>
+              </select>
+              <div id="leadTimelineErr" class="msg bad" style="display:none;"></div>
+            </div>
+            <div class="form-field">
+              <label class="inline label-check" for="leadTextOK">
+                <span>Send me updates</span>
+                <input type="checkbox" id="leadTextOK" checked />
+              </label>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" id="leadSubmit">Unlock & Price</button>
+            <button type="button" class="btn" id="cancelLead">Cancel</button>
+          </div>
+
+          <div class="modal-disclaimer">
+            <p class="disclaimer">
+              By clicking <strong>Unlock & Price</strong>, you consent to receive text messages and phone calls,
+              both of which may be automated or completed using AI. We may use prebuilt automated workflows to send
+              marketing text messages, emails, and outbound AI‑agent phone calls to the contact information you provide,
+              for the mortgage quote you are pricing. Message and data rates may apply. You can opt out at any time.
+            </p>
+          </div>
+
+          <div id="leadErr" class="msg bad" style="display:none;"></div>
+        </div>
       </form>
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- Toast container -->
+  <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Correct JS include -->
+  app.js</script>
 </body>
 </html>
