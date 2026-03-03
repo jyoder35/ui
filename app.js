@@ -1,10 +1,9 @@
-/* AZM – W4 UX pass 13
- - Conventional <620 => price at 620 and show message; always reprice into 620–639 if coming from a different bucket
- - FHA/VA <580 => price at 580; no message
- - KPI relabel to (P&I + MI)
- - Cards include "Total Monthly Housing Payment" = P&I + MI + Taxes + Insurance + HOA
- - FICO: 300–850; reprice on slider release or manual commit; bucket throttling; out-of-range error
- - Points remain at 0.5% increments; shaped curve=9 used when available
+/* AZM – W4 UX pass 14
+ - Require Loan Structure values before unlocking / pricing
+ - Results panel hidden until unlock; toggle visible after gate success or if token present
+ - Floating footer action bar (CSS handled)
+ - Hide delta tiles unless borrower points !== 0.0
+ - Keep prior logic: shaped curve response, memo cache, FICO bucketing, inverted delta colors, etc.
 */
 const $ = (id) => document.getElementById(id);
 
@@ -327,6 +326,31 @@ function renderHelperNotes(){
   $("helperNotes").textContent=msg;
 }
 
+/* ---------- Loan Structure completeness ---------- */
+function loanStructureComplete(){
+  const v = Number($("value").value);
+  const ltv = Number($("ltv").value);
+  const loan = Number($("loan").value);
+  const eq = Number($("equity").value);
+  const ok = isFinite(v) && v>0 &&
+             isFinite(ltv) && ltv>0 &&
+             isFinite(loan) && loan>0 &&
+             isFinite(eq) && eq>=0;
+  const msg = $("loanStructMsg");
+  if (!ok){
+    msg.textContent = "Enter valid numbers for Value, LTV, Loan Amount, and Equity.";
+    msg.style.display = "block";
+  } else {
+    msg.style.display = "none";
+    msg.textContent = "";
+  }
+  return ok;
+}
+function refreshUnlockButton(){
+  const enabled = zipResolved && loanStructureComplete();
+  setGateEnabled(enabled);
+}
+
 /* ---------- Pricing pipeline: state ---------- */
 let leadToken=localStorage.getItem("azm_leadToken")||"", lastQuote=null, lastQuotePar=null, gated=!!leadToken;
 let lastParSig=null;
@@ -345,18 +369,21 @@ function markCoreDirty(){
   setRecalcState();
   showStatus("Pending changes — click Re‑Calculate to update pricing.", "info");
 }
+function toggleResultsVisibility(show){
+  $("resultsPanel").style.display = show ? "" : "none";
+}
 
 /* ---------- FICO bucketing & effective pricing FICO ---------- */
 function ficoBucketKey(programUI, entered){
   const f = Number(entered||0);
   if(programUI==="CONV"){
-    if (f <= 639) return "CONV-620-639"; // floor region maps here
+    if (f <= 639) return "CONV-620-639";
     if (f >= 780) return "CONV-780+";
     const start = 620 + 20*Math.floor((f-620)/20);
     const end = start+19;
     return `CONV-${start}-${end}`;
   } else if(programUI==="FHA" || programUI==="VA"){
-    if (f <= 579) return "FHAVA-580-599"; // floor region maps here
+    if (f <= 579) return "FHAVA-580-599";
     if (f >= 700) return "FHAVA-700+";
     const start = 580 + 20*Math.floor((f-580)/20);
     const end = start+19;
@@ -384,7 +411,6 @@ function updateFicoFloorMessage(programUI, entered){
     msgEl.textContent = "Pricing requested with 620 Conv minimum credit score.";
     msgEl.style.display = "block";
   }
-  // FHA/VA: no message by request
 }
 
 /* ---------- Inputs & signatures ---------- */
@@ -397,7 +423,6 @@ function currentInputs(){
   const baseLoan=Number($("loan").value || 0);
   const ltv=Number($("ltv").value || 0);
 
-  // FICO entered vs effective
   const enteredFico = clamp($("fico").value, 300, 850);
   const pricingFico = effectiveFicoForPricing(programUI, enteredFico);
   updateFicoFloorMessage(programUI, $("fico").value);
@@ -517,6 +542,18 @@ function computeCardData(quote, inputs){
 }
 function rateCost(baseLoan, pts){ return Math.round((Number(baseLoan)||0) * ((Number(pts)||0)/100)); }
 function renderDelta(quoteWith, quotePar, inputs){
+  const deltaRow = $("resultsDelta");
+  if (Number(inputs.borrowerPts) === 0){
+    // Hide deltas when points = 0%
+    deltaRow.style.display = "none";
+    $("delta_payment").textContent = "—";
+    $("delta_rateCost").textContent = "—";
+    $("delta_payment").classList.remove("delta-pos","delta-neg");
+    $("delta_rateCost").classList.remove("delta-pos","delta-neg");
+    return;
+  }
+  deltaRow.style.display = "";
+
   const piw = Number(quoteWith?.piMonthly), miw = Number(quoteWith?.miMonthly);
   const pip = Number(quotePar ?.piMonthly), mip = Number(quotePar ?.miMonthly);
   const diffPay  = (isFinite(piw)&&isFinite(miw)&&isFinite(pip)&&isFinite(mip)) ? Math.round((piw+miw) - (pip+mip)) : NaN;
@@ -535,6 +572,8 @@ function renderDelta(quoteWith, quotePar, inputs){
 
 /* ---------- Validation ---------- */
 function validateBeforePrice(){
+  // Must have Loan Structure complete as well
+  if (!loanStructureComplete()){ return false; }
   const kind=currentProgKind();
   const dscr=Number($("dscrRatio")?.value||1.25);
   if(kind==="DSCR" && (!isFinite(dscr)||dscr<0.75)){ showMsg("dscrMsg","DSCR should be at least 0.75."); return false; } else showMsg("dscrMsg","");
@@ -749,7 +788,15 @@ async function saveQuote(){
 }
 
 /* ---------- Lead modal ---------- */
-function openLeadModal(){ $("leadModal").setAttribute("aria-hidden","false"); clearLeadErrors(); $("leadFirst").focus(); }
+function openLeadModal(){
+  // Require Loan Structure + ZIP before opening
+  if (!zipResolved || !loanStructureComplete()){
+    toast("Please complete Property ZIP and Loan Structure first.","warn");
+    refreshUnlockButton();
+    return;
+  }
+  $("leadModal").setAttribute("aria-hidden","false"); clearLeadErrors(); $("leadFirst").focus();
+}
 function closeLeadModal(){ $("leadModal").setAttribute("aria-hidden","true"); }
 function clearLeadErrors(){
   ["leadFirstErr","leadLastErr","leadPhoneErr","leadEmailErr","leadTimelineErr","leadErr"].forEach(id=>{ const el=$(id); el.style.display="none"; el.textContent=""; });
@@ -828,6 +875,10 @@ async function upsertLead(){
     localStorage.setItem("azm_leadEmail", v.email);
     gated = true;
 
+    // Show results panel now that we're unlocked
+    toggleResultsVisibility(true);
+
+    // Gray out Get My Results after unlock
     const gateBtn = $("btnGate");
     gateBtn.disabled = true;
     gateBtn.textContent = "Unlocked";
@@ -856,8 +907,8 @@ async function upsertLead(){
 function bindEvents(){
   // Gate
   $("btnGate").addEventListener("click", () => {
-    if(!zipResolved){ toast("Enter a valid ZIP first","warn"); return; }
-    if (gated && leadToken){ return; }
+    if(!zipResolved || !loanStructureComplete()){ toast("Please complete Property ZIP and Loan Structure first.","warn"); refreshUnlockButton(); return; }
+    if (gated && leadToken){ /* already unlocked */ return; }
     openLeadModal();
   });
   // Lead modal controls
@@ -881,6 +932,7 @@ function bindEvents(){
   // Re-Calculate
   $("btnRecalc").addEventListener("click", () => {
     if(!gated){ toast("Complete Get My Results first","warn"); return; }
+    if(!loanStructureComplete()){ toast("Please complete Loan Structure fields.","warn"); return; }
     priceNow();
   });
   // Save
@@ -900,7 +952,7 @@ function bindEvents(){
     renderLoanLine();
     $("zip").value = keepZip;
     zipResolved = keepResolved;
-    setGateEnabled(zipResolved);
+    refreshUnlockButton();
     coreDirty = true; setRecalcState();
     $("btnSave").disabled = true;
     ["kpiRate","kpiTotal",
@@ -908,6 +960,7 @@ function bindEvents(){
      "par_loanCalc","par_rate","par_housing","par_pi","par_mi","par_taxes","par_ins","par_hoa",
      "delta_payment","delta_rateCost"
     ].forEach(id => { $(id).textContent = "—"; });
+    $("resultsDelta").style.display = "none";
     $("delta_payment").classList.remove("delta-pos","delta-neg");
     $("delta_rateCost").classList.remove("delta-pos","delta-neg");
     lastQuotePar = null; lastParSig = null;
@@ -916,13 +969,12 @@ function bindEvents(){
   });
 
   // ZIP
-  $("zip").addEventListener("input", () => { onZipInput(); markCoreDirty(); });
+  $("zip").addEventListener("input", () => { onZipInput(); refreshUnlockButton(); markCoreDirty(); });
   $("zip").addEventListener("keydown", (e) => { if(e.key==="Enter" && !$("btnGate").disabled){ e.preventDefault(); $("btnGate").click(); } });
 
   // Program/Txn/Term
   $("program").addEventListener("change", () => {
     rebuildTxnOptions(); updateProgramPanels(); enforceLtvOnContextChange(); markCoreDirty();
-    // Reset last priced bucket when switching programs (bucket tables differ)
     lastPricedFicoBucket = null; lastProgramForBucket = null;
   });
   $("txn").addEventListener("change", () => {
@@ -930,14 +982,14 @@ function bindEvents(){
   });
   $("term").addEventListener("change", () => { markCoreDirty(); });
 
-  // Structure (core)
+  // Structure (core) + unlock state
   $("value").addEventListener("input", () => {
     if(syncLock) return; syncLock=true; recomputeFromValue(); syncLock=false;
-    seedTaxesInsFromState(); renderLoanLine(); markCoreDirty();
+    seedTaxesInsFromState(); renderLoanLine(); refreshUnlockButton(); markCoreDirty();
   });
-  $("ltv").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromLtv(); syncLock=false; renderLoanLine(); markCoreDirty(); });
-  $("loan").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromLoan(); syncLock=false; renderLoanLine(); markCoreDirty(); });
-  $("equity").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromEquity();syncLock=false; renderLoanLine(); markCoreDirty(); });
+  $("ltv").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromLtv(); syncLock=false; renderLoanLine(); refreshUnlockButton(); markCoreDirty(); });
+  $("loan").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromLoan(); syncLock=false; renderLoanLine(); refreshUnlockButton(); markCoreDirty(); });
+  $("equity").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromEquity();syncLock=false; renderLoanLine(); refreshUnlockButton(); markCoreDirty(); });
 
   // Taxes & Insurance (live unless core dirty)
   ["taxes","ins","hoa"].forEach(id => $(id).addEventListener("input", () => {
@@ -1015,14 +1067,14 @@ function onZipInput(){
       zipResolved=false; setZipMsg("", "");
       stateAbbr="AZ"; stateName="Arizona"; cityName="";
       seedTaxesInsFromState();
-      setGateEnabled(false);
+      refreshUnlockButton();
       showStatus("Pricing ready — click Get My Results to review.","info");
       return;
     }
     const info=await fetchZipInfo(zip);
     if(!info){
       zipResolved=false; setZipMsg("warn","Could not find Property Zip. Try another ZIP.");
-      setGateEnabled(false);
+      refreshUnlockButton();
       showStatus("Enter a valid ZIP to proceed.","warn");
       return;
     }
@@ -1030,7 +1082,7 @@ function onZipInput(){
     stateAbbr=info.abbr; stateName=info.state; cityName=info.city||"";
     setZipMsg("ok", `${cityName?cityName+", ":""}${stateName}`);
     seedTaxesInsFromState();
-    setGateEnabled(true);
+    refreshUnlockButton();
     if(!gated) showStatus("Pricing ready — click Get My Results to review.","info");
   }, 250);
 }
@@ -1040,11 +1092,12 @@ function initialRender(){
   rebuildTxnOptions();
   updateProgramPanels();
   seedTaxesInsFromState();
-  setGateEnabled(false);
+  refreshUnlockButton();
   $("btnRecalc").disabled = true;
   $("btnSave").disabled = true;
   $("recalcDot").style.visibility = "hidden";
   renderLoanLine();
+  toggleResultsVisibility(!!leadToken); // show results only if already unlocked
   showStatus("Pricing ready — click Get My Results to review.","info");
 }
 document.addEventListener("DOMContentLoaded", () => { bindEvents(); initialRender(); });
