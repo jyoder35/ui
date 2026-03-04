@@ -2,11 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, user-scalable=no"
+  />
   <title>AZM – W4 Lead‑Gated Mortgage UI</title>
 
   <!-- Correct CSS include -->
-  styles.css
+  <link rel="stylesheet" href="styles.css" />
   <!-- CSP (relaxed for Apps Script; remove while iterating locally if desired) -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self';
@@ -98,7 +101,8 @@
         </div>
         <div class="form-field">
           <label for="ltv">LTV (%)</label>
-          <input id="ltv" inputmode="decimal" value="80" />
+          <!-- text input w/ decimal keyboard; we format to 3 decimals on blur, not on each keystroke -->
+          <input id="ltv" inputmode="decimal" autocomplete="off" spellcheck="false" value="80" />
           <div id="ltvMsg" class="msg" style="display:none;"></div>
         </div>
         <div class="form-field">
@@ -139,28 +143,23 @@
         <div class="form-field">
           <label for="fico">FICO</label>
           <div class="slider-row">
-            <!-- 300–850; reprice on change (release) only -->
-            <input type="range" id="ficoRange" min="300" max="850" step="1" value="740" />
+            <input type="range" id="ficoRange" min="500" max="850" step="1" value="740" />
             <div class="chip" id="ficoChip">740</div>
           </div>
           <input id="fico" inputmode="numeric" value="740" />
           <div id="ficoMsg" class="msg bad" style="display:none;"></div>
         </div>
-
         <div class="form-field">
           <label for="points">Borrower Points (%)</label>
           <div class="slider-row">
-            <!-- 0.5% increments -->
             <input type="range" id="pointsRange" min="-1.0" max="3.0" step="0.5" value="0.0" />
             <div class="chip" id="pointsChip">0.0%</div>
           </div>
-          <input id="points" inputmode="decimal" value="0.0" />
+          <input id="points" type="number" step="0.5" min="-1.0" max="3.0" inputmode="decimal" value="0.0" />
         </div>
-
         <div class="form-field">
           <label>Program Specific Options & Factors</label>
           <div class="pill-group" id="progFactors"></div>
-          <!-- DSCR (shown only for DSCR via JS) -->
           <div id="dscrWrap" style="display:none; margin-top:8px;">
             <label for="dscrRatio">DSCR Ratio</label>
             <input id="dscrRatio" inputmode="decimal" value="1.25" />
@@ -173,20 +172,16 @@
     <!-- Results -->
     <section class="panel" id="resultsPanel" style="display:none;">
       <div class="panel-title">Results</div>
-
-      <!-- Row 1: KPIs (2 columns) -->
       <div class="results-summary grid grid-2">
         <div class="kpi">
           <div class="kpi-label">Estimated Interest Rate</div>
           <div id="kpiRate" class="kpi-value">—</div>
         </div>
         <div class="kpi">
-          <div class="kpi-label">Estimated Mortgage Payment (P&amp;I + MI)</div>
+          <div class="kpi-label">Estimated Mortgage Payment (P&I + MI)</div>
           <div id="kpiTotal" class="kpi-value">—</div>
         </div>
       </div>
-
-      <!-- Row 2: Payment Cards (2 columns) -->
       <div class="results-cards grid grid-2">
         <div class="result-card" id="cardWith">
           <div class="card-title">Selected Price</div>
@@ -194,21 +189,20 @@
             <div class="kv"><span>Financed Loan Amount</span><span id="with_loanCalc">—</span></div>
             <div class="kv"><span>Rate</span><span id="with_rate">—</span></div>
             <div class="kv"><span>Total Monthly Housing Payment</span><span id="with_housing">—</span></div>
-            <div class="kv"><span>P&amp;I</span><span id="with_pi">—</span></div>
+            <div class="kv"><span>P&I</span><span id="with_pi">—</span></div>
             <div class="kv"><span>PMI / MIP</span><span id="with_mi">—</span></div>
             <div class="kv"><span>Taxes</span><span id="with_taxes">—</span></div>
             <div class="kv"><span>Insurance</span><span id="with_ins">—</span></div>
             <div class="kv"><span>HOA</span><span id="with_hoa">—</span></div>
           </div>
         </div>
-
         <div class="result-card" id="cardPar">
           <div class="card-title">Par Price</div>
           <div class="card-body">
             <div class="kv"><span>Financed Loan Amount</span><span id="par_loanCalc">—</span></div>
             <div class="kv"><span>Rate</span><span id="par_rate">—</span></div>
             <div class="kv"><span>Total Monthly Housing Payment</span><span id="par_housing">—</span></div>
-            <div class="kv"><span>P&amp;I</span><span id="par_pi">—</span></div>
+            <div class="kv"><span>P&I</span><span id="par_pi">—</span></div>
             <div class="kv"><span>PMI / MIP</span><span id="par_mi">—</span></div>
             <div class="kv"><span>Taxes</span><span id="par_taxes">—</span></div>
             <div class="kv"><span>Insurance</span><span id="par_ins">—</span></div>
@@ -216,8 +210,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Row 3: Delta (2 columns) -->
       <div class="results-delta grid grid-2" id="resultsDelta" style="display:none;">
         <div class="kpi">
           <div class="kpi-label">Rate Cost Difference</div>
@@ -228,13 +220,12 @@
           <div id="delta_payment" class="kpi-value">—</div>
         </div>
       </div>
-
       <div id="loanLine" class="loanline"></div>
       <div id="helperNotes" class="helper-notes"></div>
     </section>
   </main>
 
-  <!-- Floating Footer (always visible action bar) -->
+  <!-- Floating Footer: action buttons + pricing indicator -->
   <footer class="footer-bar" role="contentinfo">
     <div class="container footer-inner">
       <button id="btnGate" class="btn btn-primary" disabled title="Enter required fields to continue">Get My Results</button>
@@ -244,11 +235,79 @@
       </button>
       <button id="btnSave" class="btn" disabled>Save Quote</button>
       <button id="btnReset" class="btn btn-ghost">Reset</button>
+
+      <!-- pricing indicator -->
+      <div id="footerIndicator" class="footer-indicator">Ready</div>
+
       <div id="lastQuoted" class="timestamp"></div>
     </div>
   </footer>
 
+  <!-- Toast host -->
+  <div id="toastHost" class="toast-host" aria-live="polite"></div>
+
+  <!-- Lead Capture Modal -->
+  <section id="leadModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="leadTitle">
+    <div id="leadModalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
+    <div class="modal-card">
+      <header class="modal-header">
+        <div>
+          <div id="leadTitle" class="modal-title">Get My Results</div>
+          <div class="modal-subtitle">Tell us a bit about you so we can save and tailor your quote.</div>
+        </div>
+        <button id="closeLead" class="btn-icon" aria-label="Close">✕</button>
+      </header>
+      <div class="modal-body">
+        <div class="grid grid-2">
+          <div class="form-field">
+            <label for="leadFirst">First name</label>
+            <input id="leadFirst" autocomplete="given-name" />
+            <div id="leadFirstErr" class="msg bad" style="display:none;"></div>
+          </div>
+          <div class="form-field">
+            <label for="leadLast">Last name</label>
+            <input id="leadLast" autocomplete="family-name" />
+            <div id="leadLastErr" class="msg bad" style="display:none;"></div>
+          </div>
+          <div class="form-field">
+            <label for="leadPhone">Mobile / Phone</label>
+            <input id="leadPhone" inputmode="tel" autocomplete="tel" placeholder="(555) 555-5555" />
+            <div id="leadPhoneErr" class="msg bad" style="display:none;"></div>
+          </div>
+          <div class="form-field">
+            <label for="leadEmail">Email</label>
+            <input id="leadEmail" type="email" autocomplete="email" placeholder="you@example.com" />
+            <div id="leadEmailErr" class="msg bad" style="display:none;"></div>
+          </div>
+          <div class="form-field">
+            <label for="leadTimeline">Timeline</label>
+            <select id="leadTimeline">
+              <option value="" selected disabled>Select a timeline</option>
+              <option value="ASAP">ASAP / In Contract</option>
+              <option value="30-60">30–60 days</option>
+              <option value="60-90">60–90 days</option>
+              <option value="90+">90+ days</option>
+              <option value="JustLooking">Just looking</option>
+            </select>
+            <div id="leadTimelineErr" class="msg bad" style="display:none;"></div>
+          </div>
+          <div class="form-field">
+            <label class="inline">
+              <input type="checkbox" id="leadTextOK" />
+              OK to text me about my quote
+            </label>
+          </div>
+        </div>
+        <div id="leadErr" class="msg bad" style="display:none; margin-top:8px;"></div>
+        <div class="modal-actions">
+          <button id="cancelLead" class="btn">Cancel</button>
+          <button id="leadSubmit" class="btn btn-primary">Submit & Unlock</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Correct JS include -->
-  app.js</script>
+  <script src="app.js"></script>
 </body>
 </html>
