@@ -1,33 +1,31 @@
-/* AZM – W4 UX pass 14
- - Require Loan Structure values before unlocking / pricing
- - Results panel hidden until unlock; toggle visible after gate success or if token present
- - Floating footer action bar (CSS handled)
- - Hide delta tiles unless borrower points !== 0.0
- - Keep prior logic: shaped curve response, memo cache, FICO bucketing, inverted delta colors, etc.
+/* AZM – W4 UX pass 18
+   - Fix: LTV input now allows decimals freely; we format to 3 decimals on blur (not on each keystroke)
+   - Include PMI only when LTV > 80% (strict)
+   - Footer indicator mirrors status ("Ready" / "Pricing…" / "Priced successfully.", etc.)
+   - FICO text↔slider sync (slider min=500; text 300–850) and points step input preserved
 */
 const $ = (id) => document.getElementById(id);
 
 /* ---------- Formatters ---------- */
-const fmtUSD   = (n) => (isFinite(+n) ? "$" + Math.round(+n).toLocaleString() : "—");
-const fmtUSD0  = (n) => (isFinite(+n) ? Math.round(+n).toLocaleString() : "—");
-const fmtRate  = (r) => (isFinite(+r) ? (+r).toFixed(3).replace(/\.?0+$/,"") + "%" : "—");
-const fmtMonthlyDelta = (n) => {
-  if (!isFinite(+n)) return "—";
-  const s = Math.round(Math.abs(n));
-  return `${n >= 0 ? "+" : "−"}$${s.toLocaleString()}/mo`;
-};
-const fmtOneTimeDelta = (n) => {
-  if (!isFinite(+n)) return "—";
-  const s = Math.round(Math.abs(n));
-  return `${n >= 0 ? "+" : "−"}$${s.toLocaleString()}`;
-};
-const nowStamp = () => {
-  const d = new Date();
-  return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-};
+const fmtUSD = (n) => (isFinite(+n) ? "$" + Math.round(+n).toLocaleString() : "—");
+const fmtUSD0 = (n) => (isFinite(+n) ? Math.round(+n).toLocaleString() : "—");
+const fmtRate = (r) => (isFinite(+r) ? (+r).toFixed(3).replace(/\.?0+$/,"") + "%" : "—");
+const fmtMonthlyDelta = (n) => (!isFinite(+n) ? "—" : `${n >= 0 ? "+" : "−"}$${Math.round(Math.abs(n)).toLocaleString()}/mo`);
+const fmtOneTimeDelta = (n) => (!isFinite(+n) ? "—" : `${n >= 0 ? "+" : "−"}$${Math.round(Math.abs(n)).toLocaleString()}`);
+const nowStamp = () => { const d = new Date(); return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
 
-/* ---------- Status + Toast ---------- */
-function showStatus(text, type=""){ const s=$("statusLine"); s.textContent=text; s.className="status"+(type?(" "+type):""); }
+/* ---------- Status + Indicator + Toast ---------- */
+function setFooterIndicator(text, type=""){
+  const el = $("footerIndicator");
+  el.textContent = text || "";
+  el.className = "footer-indicator" + (type ? " " + type : "");
+}
+function showStatus(text, type=""){
+  const s = $("statusLine");
+  s.textContent = text;
+  s.className = "status" + (type ? (" " + type) : "");
+  setFooterIndicator(text, type);
+}
 function toast(msg, type="info", timeout=2400){
   const host = $("toastHost");
   const div = document.createElement("div");
@@ -49,26 +47,26 @@ function setDev(show){ DEV_SHOW=!!show; $("devPayloads").open=DEV_SHOW; }
 function setDevBlock(id,v){ $(id).textContent=(typeof v==="string")?v:JSON.stringify(v ?? "// none", null, 2); }
 function captureDev(id,obj,trunc=0){ if(!DEV_SHOW) return; if(trunc && typeof obj==="string" && obj.length>trunc) setDevBlock(id,obj.slice(0,trunc)+"…"); else setDevBlock(id,obj); }
 
-/* ---------- Tax/HOI tables ---------- */
+/* ---------- Tax/HOI ---------- */
 const STATE_TAX_RATE_2023_PCT = {
-  AL:0.375, AK:0.875, AZ:0.500, AR:0.500, CA:0.750, CO:0.500, CT:1.500, DE:0.500,
-  FL:0.750, GA:0.750, HI:0.375, ID:0.500, IL:1.875, IN:0.750, IA:1.250, KS:1.250,
-  KY:0.750, LA:0.500, ME:1.000, MD:0.875, MA:1.000, MI:1.125, MN:1.000, MS:0.625,
-  MO:0.875, MT:0.625, NE:1.375, NV:0.500, NH:1.375, NJ:1.750, NM:0.625, NY:1.250,
-  NC:0.625, ND:1.000, OH:1.250, OK:0.750, OR:0.750, PA:1.250, RI:1.000, SC:0.500,
-  SD:1.000, TN:0.500, TX:1.375, UT:0.500, VT:1.375, VA:0.750, WA:0.750, WV:0.500,
-  WI:1.250, WY:0.500, DC:0.625
+ AL:0.375, AK:0.875, AZ:0.500, AR:0.500, CA:0.750, CO:0.500, CT:1.500, DE:0.500,
+ FL:0.750, GA:0.750, HI:0.375, ID:0.500, IL:1.875, IN:0.750, IA:1.250, KS:1.250,
+ KY:0.750, LA:0.500, ME:1.000, MD:0.875, MA:1.000, MI:1.125, MN:1.000, MS:0.625,
+ MO:0.875, MT:0.625, NE:1.375, NV:0.500, NH:1.375, NJ:1.750, NM:0.625, NY:1.250,
+ NC:0.625, ND:1.000, OH:1.250, OK:0.750, OR:0.750, PA:1.250, RI:1.000, SC:0.500,
+ SD:1.000, TN:0.500, TX:1.375, UT:0.500, VT:1.375, VA:0.750, WA:0.750, WV:0.500,
+ WI:1.250, WY:0.500, DC:0.625
 };
 const HOI_2022 = {
-  "Alabama":1748,"Alaska":1129,"Arizona":1018,"Arkansas":1740,"California":1492,"Colorado":2079,
-  "Connecticut":1814,"Delaware":1103,"District of Columbia":1384,"Florida":2677,"Georgia":1655,
-  "Hawaii":1431,"Idaho":1002,"Illinois":1343,"Indiana":1191,"Iowa":1268,"Kansas":1583,"Kentucky":1359,
-  "Louisiana":2603,"Maine":1077,"Maryland":1392,"Massachusetts":1871,"Michigan":1056,"Minnesota":1774,
-  "Mississippi":1907,"Missouri":1668,"Montana":1639,"Nebraska":1869,"Nevada":948,"New Hampshire":1188,
-  "New Jersey":1417,"New Mexico":1322,"New York":1628,"North Carolina":1621,"North Dakota":1325,"Ohio":995,
-  "Oklahoma":2268,"Oregon":893,"Pennsylvania":1120,"Rhode Island":2074,"South Carolina":1571,
-  "South Dakota":1756,"Tennessee":1492,"Texas":2397,"Utah":937,"Vermont":1109,"Virginia":1332,
-  "Washington":1151,"West Virginia":1113,"Wisconsin":957,"Wyoming":1596
+ "Alabama":1748,"Alaska":1129,"Arizona":1018,"Arkansas":1740,"California":1492,"Colorado":2079,
+ "Connecticut":1814,"Delaware":1103,"District of Columbia":1384,"Florida":2677,"Georgia":1655,
+ "Hawaii":1431,"Idaho":1002,"Illinois":1343,"Indiana":1191,"Iowa":1268,"Kansas":1583,"Kentucky":1359,
+ "Louisiana":2603,"Maine":1077,"Maryland":1392,"Massachusetts":1871,"Michigan":1056,"Minnesota":1774,
+ "Mississippi":1907,"Missouri":1668,"Montana":1639,"Nebraska":1869,"Nevada":948,"New Hampshire":1188,
+ "New Jersey":1417,"New Mexico":1322,"New York":1628,"North Carolina":1621,"North Dakota":1325,"Ohio":995,
+ "Oklahoma":2268,"Oregon":893,"Pennsylvania":1120,"Rhode Island":2074,"South Carolina":1571,
+ "South Dakota":1756,"Tennessee":1492,"Texas":2397,"Utah":937,"Vermont":1109,"Virginia":1332,
+ "Washington":1151,"West Virginia":1113,"Wisconsin":957,"Wyoming":1596
 };
 const HOI_BASE_COVERAGE = 300000;
 
@@ -123,7 +121,7 @@ function rebuildTxnOptions(){
   el.value = Array.from(el.options).some(o=>o.value===keep) ? keep : "PURCHASE";
 }
 
-/* ---------- Program options ---------- */
+/* ---------- Program options (PMI visibility: LTV > 80%) ---------- */
 function pillCheckbox(id, label, checked){
   const labelEl=document.createElement("label");
   labelEl.className="pill";
@@ -133,37 +131,45 @@ function pillCheckbox(id, label, checked){
   labelEl.appendChild(i); labelEl.appendChild(s);
   return labelEl;
 }
+function showIncludePmi(){
+  const prog = currentProgKind();
+  const ltv  = Number($("ltv").value || 0);
+  return prog==="CONV" && isFinite(ltv) && ltv > 80; // strictly > 80%
+}
 function renderProgFactors(){
   const wrap=$("progFactors");
   wrap.innerHTML="";
   const kind=currentProgKind();
   const txn=$("txn").value;
   $("dscrWrap").style.display="none";
+
   if(kind==="CONV"){
-    if(txn==="PURCHASE"){
-      wrap.appendChild(pillCheckbox("pmiToggle","Include PMI",true));
+    if (txn==="PURCHASE"){
+      if (showIncludePmi()) wrap.appendChild(pillCheckbox("pmiToggle","Include PMI",true));
       wrap.appendChild(pillCheckbox("dtiOver45","DTI > 45%",false));
       wrap.appendChild(pillCheckbox("twoPlusBorrowers","2+ Borrowers",false));
       wrap.appendChild(pillCheckbox("firstTimeBuyer","First‑Time Homebuyer",false));
-    }else if(txn==="REFI"){
-      wrap.appendChild(pillCheckbox("pmiToggle","Include PMI",true));
+    } else if (txn==="REFI"){
+      if (showIncludePmi()) wrap.appendChild(pillCheckbox("pmiToggle","Include PMI",true));
       wrap.appendChild(pillCheckbox("dtiOver45","DTI > 45%",false));
       wrap.appendChild(pillCheckbox("twoPlusBorrowers","2+ Borrowers",false));
-    }else if(txn==="CASHOUT"){
+    } else if (txn==="CASHOUT"){
       wrap.appendChild(pillCheckbox("dtiOver45","DTI > 45%",false));
     }
-  }else if(kind==="FHA" && txn==="PURCHASE"){
+  } else if(kind==="FHA" && txn==="PURCHASE"){
     wrap.appendChild(pillCheckbox("firstTimeBuyer","First‑Time Homebuyer",false));
-  }else if(kind==="VA"){
+  } else if(kind==="VA"){
     wrap.appendChild(pillCheckbox("vaExempt","Funding Fee Exempt",false));
     wrap.appendChild(pillCheckbox("vaFirstUse","First‑Use",true));
-  }else if(kind==="DSCR"){
+  } else if(kind==="DSCR"){
     wrap.appendChild(pillCheckbox("firstTimeBuyer","First‑Time Homebuyer",false));
     $("dscrWrap").style.display="";
   }
+
   ["pmiToggle","dtiOver45","twoPlusBorrowers","vaExempt","vaFirstUse"].forEach(id=>{
     if ($(id)) $(id).addEventListener("change", ()=>{ renderLoanLine(); maybeReprice(); });
   });
+
   if ($("firstTimeBuyer")){
     $("firstTimeBuyer").addEventListener("change", ()=>{
       const isConvPurchase = currentProgKind()==="CONV" && $("txn").value==="PURCHASE";
@@ -171,7 +177,7 @@ function renderProgFactors(){
         let ltv=Number($("ltv").value||0);
         if (ltv > 95){
           $("ltv").value="95";
-          syncFromLtvCore();
+          syncFromLtvCore(true);
           showConvPurchaseCapMsg();
         }
       }
@@ -196,7 +202,7 @@ function updateProgramPanels(){
   renderHelperNotes();
 }
 
-/* ---------- LTV sync ---------- */
+/* ---------- LTV sync (free typing; format to 3 decimals on blur) ---------- */
 let syncLock=false;
 function parseNum(el){ const n=parseFloat(el.value); return Number.isFinite(n)?n:null; }
 function getMaxLTV(){
@@ -223,44 +229,46 @@ function getMaxLTV(){
     return 80;
   }
 }
-function showConvPurchaseCapMsg(){
-  showMsg("ltvMsg","LTV capped at 95% for CONV PURCHASE unless First‑Time Homebuyer is selected.");
-}
+function showConvPurchaseCapMsg(){ showMsg("ltvMsg","LTV capped at 95% for CONV PURCHASE unless First‑Time Homebuyer is selected."); }
 function showMsg(id,text){ const el=$(id); if(!text){ el.style.display="none"; el.textContent=""; return; } el.textContent=text; el.style.display="block"; }
-function applyLtvCap(ltv){
+
+/** applyLtvCap: optionally format field value */
+function applyLtvCap(ltv, {format=true} = {}){
   const kind=currentProgKind(), txn=$("txn").value;
   const max=getMaxLTV();
   let out=ltv;
   if(Number.isFinite(ltv) && Number.isFinite(max) && ltv>max){
     out=max;
-    if(kind==="CONV" && txn==="PURCHASE" && !($("firstTimeBuyer")?.checked))
-      showConvPurchaseCapMsg();
-    else
-      showMsg("ltvMsg",`LTV capped at ${max}% for ${kind} ${txn}.`);
-  }else{
+    if(kind==="CONV" && txn==="PURCHASE" && !($("firstTimeBuyer")?.checked)) showConvPurchaseCapMsg();
+    else showMsg("ltvMsg",`LTV capped at ${max}% for ${kind} ${txn}.`);
+  } else {
     showMsg("ltvMsg","");
   }
-  if(Number.isFinite(out)) $("ltv").value=String(Math.round(out*1000)/1000);
+  if(format && Number.isFinite(out)){
+    $("ltv").value = String(Math.round(out*1000)/1000); // normalize to 3 decimals on demand
+  }
   return out;
+}
+
+/** recomputeFromLtv: pass format=false during typing, true on blur */
+function recomputeFromLtv({format=false} = {}){
+  const v=parseNum($("value")); let ltv=parseNum($("ltv"));
+  if(!Number.isFinite(v)||v<=0||!Number.isFinite(ltv)) return;
+  ltv=applyLtvCap(ltv, {format});
+  const loan=Math.round(v*(ltv/100)); const eq=Math.round(v-loan);
+  $("loan").value=String(loan); $("equity").value=String(eq);
 }
 function recomputeFromValue(){
   const v=parseNum($("value")); if(!Number.isFinite(v)||v<=0) return;
   let ltv=parseNum($("ltv")); if(!Number.isFinite(ltv)) return;
-  ltv=applyLtvCap(ltv);
-  const loan=Math.round(v*(ltv/100)); const eq=Math.round(v-loan);
-  $("loan").value=String(loan); $("equity").value=String(eq);
-}
-function recomputeFromLtv(){
-  const v=parseNum($("value")); let ltv=parseNum($("ltv"));
-  if(!Number.isFinite(v)||v<=0||!Number.isFinite(ltv)) return;
-  ltv=applyLtvCap(ltv);
+  ltv=applyLtvCap(ltv, {format:false});
   const loan=Math.round(v*(ltv/100)); const eq=Math.round(v-loan);
   $("loan").value=String(loan); $("equity").value=String(eq);
 }
 function recomputeFromLoan(){
   const v=parseNum($("value")), loan=parseNum($("loan"));
   if(!Number.isFinite(v)||v<=0||!Number.isFinite(loan)) return;
-  let ltv=(loan/v)*100; ltv=applyLtvCap(ltv);
+  let ltv=(loan/v)*100; ltv=applyLtvCap(ltv, {format:false});
   const adj=Math.round(v*(ltv/100)); const eq=Math.round(v-adj);
   $("loan").value=String(adj); $("equity").value=String(eq);
 }
@@ -268,17 +276,29 @@ function recomputeFromEquity(){
   const v=parseNum($("value")), eq=parseNum($("equity"));
   if(!Number.isFinite(v)||v<=0||!Number.isFinite(eq)) return;
   let loan=Math.round(v-eq); if(loan<0) loan=0;
-  let ltv=(loan/v)*100; ltv=applyLtvCap(ltv);
+  let ltv=(loan/v)*100; ltv=applyLtvCap(ltv, {format:false});
   const adj=Math.round(v*(ltv/100));
-  $("loan").value=String(adj); $("ltv").value=String(Math.round(ltv*1000)/1000);
+  $("loan").value=String(adj);
+  // do not force-format LTV here; let blur handler do it
 }
 function enforceLtvOnContextChange(){
   if(syncLock) return; syncLock=true;
   const v=parseNum($("value"));
-  if(Number.isFinite(v)&&v>0){ recomputeFromLtv(); }
+  if(Number.isFinite(v)&&v>0){ recomputeFromLtv({format:false}); }
   syncLock=false; renderLoanLine();
 }
-function syncFromLtvCore(){ if(syncLock) return; syncLock=true; recomputeFromLtv(); renderLoanLine(); syncLock=false; markCoreDirty(); }
+/** Format LTV to 3 decimals on blur */
+function formatLtvOnBlur(){
+  let n = parseFloat($("ltv").value);
+  if(!Number.isFinite(n)) return;
+  $("ltv").value = String(Math.round(n*1000)/1000);
+}
+
+function syncFromLtvCore(forceFormat=false){
+  if(syncLock) return; syncLock=true;
+  recomputeFromLtv({format:!!forceFormat}); renderLoanLine();
+  syncLock=false; markCoreDirty(); renderProgFactors();
+}
 
 /* ---------- FHA/VA financed loan (UI mirror) ---------- */
 const FHA_UFMIP_PCT = 1.75;
@@ -332,46 +352,23 @@ function loanStructureComplete(){
   const ltv = Number($("ltv").value);
   const loan = Number($("loan").value);
   const eq = Number($("equity").value);
-  const ok = isFinite(v) && v>0 &&
-             isFinite(ltv) && ltv>0 &&
-             isFinite(loan) && loan>0 &&
-             isFinite(eq) && eq>=0;
+  const ok = isFinite(v) && v>0 && isFinite(ltv) && ltv>0 && isFinite(loan) && loan>0 && isFinite(eq) && eq>=0;
   const msg = $("loanStructMsg");
-  if (!ok){
-    msg.textContent = "Enter valid numbers for Value, LTV, Loan Amount, and Equity.";
-    msg.style.display = "block";
-  } else {
-    msg.style.display = "none";
-    msg.textContent = "";
-  }
+  if (!ok){ msg.textContent = "Enter valid numbers for Value, LTV, Loan Amount, and Equity."; msg.style.display = "block"; }
+  else { msg.style.display = "none"; msg.textContent = ""; }
   return ok;
 }
-function refreshUnlockButton(){
-  const enabled = zipResolved && loanStructureComplete();
-  setGateEnabled(enabled);
-}
+function refreshUnlockButton(){ setGateEnabled(zipResolved && loanStructureComplete()); }
 
 /* ---------- Pricing pipeline: state ---------- */
 let leadToken=localStorage.getItem("azm_leadToken")||"", lastQuote=null, lastQuotePar=null, gated=!!leadToken;
-let lastParSig=null;
-let lastPricedFicoBucket=null, lastProgramForBucket=null;
-let debounceTimer=null, priceCallSeq=0;
-let coreDirty=false;
-let priceController = null;
-let leadController  = null;
+let lastParSig=null, lastPricedFicoBucket=null, lastProgramForBucket=null;
+let debounceTimer=null, priceCallSeq=0, coreDirty=false;
+let priceController = null, leadController = null;
 
-function setRecalcState(){
-  $("btnRecalc").disabled = !(gated && coreDirty);
-  $("recalcDot").style.visibility = (gated && coreDirty) ? "visible" : "hidden";
-}
-function markCoreDirty(){
-  coreDirty = true;
-  setRecalcState();
-  showStatus("Pending changes — click Re‑Calculate to update pricing.", "info");
-}
-function toggleResultsVisibility(show){
-  $("resultsPanel").style.display = show ? "" : "none";
-}
+function setRecalcState(){ $("btnRecalc").disabled = !(gated && coreDirty); $("recalcDot").style.visibility = (gated && coreDirty) ? "visible" : "hidden"; }
+function markCoreDirty(){ coreDirty = true; setRecalcState(); showStatus("Pending changes — click Re‑Calculate to update pricing.", "info"); }
+function toggleResultsVisibility(show){ $("resultsPanel").style.display = show ? "" : "none"; }
 
 /* ---------- FICO bucketing & effective pricing FICO ---------- */
 function ficoBucketKey(programUI, entered){
@@ -393,24 +390,13 @@ function ficoBucketKey(programUI, entered){
 }
 function effectiveFicoForPricing(programUI, entered){
   const f = Number(entered||0);
-  if(programUI==="CONV"){
-    if (f < 620) return 620;
-    if (f > 850) return 850;
-    return f;
-  } else if(programUI==="FHA" || programUI==="VA"){
-    if (f < 580) return 580;
-    if (f > 850) return 850;
-    return f;
-  }
+  if(programUI==="CONV"){ if (f < 620) return 620; if (f > 850) return 850; return f; }
+  if(programUI==="FHA" || programUI==="VA"){ if (f < 580) return 580; if (f > 850) return 850; return f; }
   return Math.max(300, Math.min(850, f));
 }
 function updateFicoFloorMessage(programUI, entered){
-  const msgEl = $("ficoMsg");
-  msgEl.style.display = "none"; msgEl.textContent = ""; $("fico").classList.remove("input-error");
-  if(programUI==="CONV" && Number(entered)<620){
-    msgEl.textContent = "Pricing requested with 620 Conv minimum credit score.";
-    msgEl.style.display = "block";
-  }
+  const msgEl = $("ficoMsg"); msgEl.style.display = "none"; msgEl.textContent = ""; $("fico").classList.remove("input-error");
+  if(programUI==="CONV" && Number(entered)<620){ msgEl.textContent = "Pricing requested with 620 Conv minimum credit score."; msgEl.style.display = "block"; }
 }
 
 /* ---------- Inputs & signatures ---------- */
@@ -419,7 +405,6 @@ function currentInputs(){
   const program=backendProgram();
   const txn=$("txn").value;
   const term=360;
-
   const baseLoan=Number($("loan").value || 0);
   const ltv=Number($("ltv").value || 0);
 
@@ -427,7 +412,6 @@ function currentInputs(){
   const pricingFico = effectiveFicoForPricing(programUI, enteredFico);
   updateFicoFloorMessage(programUI, $("fico").value);
 
-  // Borrower Points (0.5 steps)
   let borrowerPts = Number($("points").value);
   if(!isFinite(borrowerPts)) borrowerPts = 0;
   borrowerPts = Math.max(-1, Math.min(3, Math.round(borrowerPts*2)/2));
@@ -438,6 +422,7 @@ function currentInputs(){
   const taxes=Number($("taxes").value || 0);
   const ins=Number($("ins").value || 0);
   const hoa=Number($("hoa").value || 0);
+
   const pmiToggle=$("pmiToggle")?.checked ?? false;
   const dtiOver45=$("dtiOver45")?.checked ?? false;
   const twoPlusBorrowers=$("twoPlusBorrowers")?.checked ?? false;
@@ -445,6 +430,7 @@ function currentInputs(){
   const vaExempt=$("vaExempt")?.checked ?? false;
   const vaFirstUse=$("vaFirstUse")?.checked ?? false;
   const dscrRatio=Number($("dscrRatio")?.value || 1.25);
+
   const loanCalc=computeFinancedLoan(baseLoan);
   const fha = (program.startsWith("FHA")) ? { financeUfmip: true, annualMip: 0.55 } : undefined;
   const va  = (program.startsWith("VA"))  ? { exempt: vaExempt, firstUse: vaFirstUse } : undefined;
@@ -462,59 +448,35 @@ function currentInputs(){
 }
 function parSignatureFrom(inputs){
   return JSON.stringify({
-    program: inputs.program,
-    txn: inputs.txn,
-    term: inputs.term,
-    loan: inputs.loan,
-    ltv: inputs.ltv,
-    fico: inputs.fico,
-    pmiToggle: inputs.pmiToggle,
-    dtiOver45: inputs.dtiOver45,
-    twoPlusBorrowers: inputs.twoPlusBorrowers,
-    firstTimeBuyer: inputs.firstTimeBuyer,
-    fha: inputs.fha,
-    va: inputs.va,
-    dscrRatio: inputs.dscrRatio
+    program: inputs.program, txn: inputs.txn, term: inputs.term,
+    loan: inputs.loan, ltv: inputs.ltv, fico: inputs.fico,
+    pmiToggle: inputs.pmiToggle, dtiOver45: inputs.dtiOver45, twoPlusBorrowers: inputs.twoPlusBorrowers,
+    firstTimeBuyer: inputs.firstTimeBuyer, fha: inputs.fha, va: inputs.va, dscrRatio: inputs.dscrRatio
   });
 }
 function selSignatureFrom(inputs){
   return JSON.stringify({
-    program: inputs.program,
-    txn: inputs.txn,
-    term: inputs.term,
-    loan: inputs.loan,
-    ltv: inputs.ltv,
-    fico: inputs.fico,
+    program: inputs.program, txn: inputs.txn, term: inputs.term,
+    loan: inputs.loan, ltv: inputs.ltv, fico: inputs.fico,
     borrowerPts: inputs.borrowerPts,
-    pmiToggle: inputs.pmiToggle,
-    dtiOver45: inputs.dtiOver45,
-    twoPlusBorrowers: inputs.twoPlusBorrowers,
-    firstTimeBuyer: inputs.firstTimeBuyer,
-    fha: inputs.fha,
-    va: inputs.va,
-    dscrRatio: inputs.dscrRatio
+    pmiToggle: inputs.pmiToggle, dtiOver45: inputs.dtiOver45, twoPlusBorrowers: inputs.twoPlusBorrowers,
+    firstTimeBuyer: inputs.firstTimeBuyer, fha: inputs.fha, va: inputs.va, dscrRatio: inputs.dscrRatio
   });
 }
 
 /* ---------- Client memoization ---------- */
-const PRICE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const PRICE_CACHE_TTL_MS = 5 * 60 * 1000;
 const priceCache = new Map();
-function cacheGet(key){
-  const e = priceCache.get(key);
-  if(!e) return null;
-  if(Date.now() - e.ts > PRICE_CACHE_TTL_MS){ priceCache.delete(key); return null; }
-  return e.data;
-}
+function cacheGet(key){ const e = priceCache.get(key); if(!e) return null; if(Date.now() - e.ts > PRICE_CACHE_TTL_MS){ priceCache.delete(key); return null; } return e.data; }
 function cacheSet(key, data){ priceCache.set(key, { ts: Date.now(), data }); }
 
 /* ---------- Results rendering ---------- */
 function monthly(n){ return isFinite(+n) ? Math.round(+n/12) : 0; }
 function housingTotal(pi, mi, taxesM, insM, hoaM){ return (Number(pi)||0)+(Number(mi)||0)+(Number(taxesM)||0)+(Number(insM)||0)+(Number(hoaM)||0); }
-
 function renderKPIs(quoteWith){
   const rate = quoteWith?.noteRate;
-  const total = (Number(quoteWith?.piMonthly)||0) + (Number(quoteWith?.miMonthly)||0); // PI + MI only
-  $("kpiRate").textContent  = fmtRate(rate);
+  const total = (Number(quoteWith?.piMonthly)||0) + (Number(quoteWith?.miMonthly)||0);
+  $("kpiRate").textContent = fmtRate(rate);
   $("kpiTotal").textContent = fmtUSD(total);
   $("lastQuoted").textContent = `Last quoted at ${nowStamp()}`;
 }
@@ -544,35 +506,25 @@ function rateCost(baseLoan, pts){ return Math.round((Number(baseLoan)||0) * ((Nu
 function renderDelta(quoteWith, quotePar, inputs){
   const deltaRow = $("resultsDelta");
   if (Number(inputs.borrowerPts) === 0){
-    // Hide deltas when points = 0%
     deltaRow.style.display = "none";
-    $("delta_payment").textContent = "—";
-    $("delta_rateCost").textContent = "—";
-    $("delta_payment").classList.remove("delta-pos","delta-neg");
-    $("delta_rateCost").classList.remove("delta-pos","delta-neg");
+    ["delta_payment","delta_rateCost"].forEach(id=>{ $(id).textContent="—"; $(id).className="kpi-value"; });
     return;
   }
   deltaRow.style.display = "";
-
   const piw = Number(quoteWith?.piMonthly), miw = Number(quoteWith?.miMonthly);
   const pip = Number(quotePar ?.piMonthly), mip = Number(quotePar ?.miMonthly);
-  const diffPay  = (isFinite(piw)&&isFinite(miw)&&isFinite(pip)&&isFinite(mip)) ? Math.round((piw+miw) - (pip+mip)) : NaN;
+  const diffPay = (isFinite(piw)&&isFinite(miw)&&isFinite(pip)&&isFinite(mip)) ? Math.round((piw+miw) - (pip+mip)) : NaN;
   const diffCost = rateCost(inputs.loan, inputs.borrowerPts) - 0;
-
-  const elPay  = $("delta_payment");
+  const elPay = $("delta_payment");
   const elCost = $("delta_rateCost");
-  elPay.textContent  = fmtMonthlyDelta(diffPay);
+  elPay.textContent = fmtMonthlyDelta(diffPay);
   elCost.textContent = fmtOneTimeDelta(diffCost);
-
-  elPay.classList.remove("delta-pos","delta-neg");
-  elCost.classList.remove("delta-pos","delta-neg");
-  if (isFinite(diffPay))  { elPay.classList.add(diffPay  < 0 ? "delta-pos" : "delta-neg"); }
-  if (isFinite(diffCost)) { elCost.classList.add(diffCost < 0 ? "delta-pos" : "delta-neg"); }
+  elPay.className = "kpi-value " + (isFinite(diffPay) && diffPay < 0 ? "delta-pos" : "delta-neg");
+  elCost.className = "kpi-value " + (isFinite(diffCost) && diffCost < 0 ? "delta-pos" : "delta-neg");
 }
 
 /* ---------- Validation ---------- */
 function validateBeforePrice(){
-  // Must have Loan Structure complete as well
   if (!loanStructureComplete()){ return false; }
   const kind=currentProgKind();
   const dscr=Number($("dscrRatio")?.value||1.25);
@@ -590,7 +542,7 @@ function validateBeforePrice(){
   return true;
 }
 
-/* ---------- Pricing (shaped response + cache + fallback) ---------- */
+/* ---------- Pricing ---------- */
 async function priceNow(){
   if(!gated||!leadToken){ showStatus("Pricing ready — click Get My Results to review.","info"); return; }
   if(!validateBeforePrice()) return;
@@ -602,8 +554,8 @@ async function priceNow(){
   const inputs = currentInputs();
   const selSig = selSignatureFrom(inputs);
   const parSig = parSignatureFrom(inputs);
-  const selKey = "sel|" + selSig;
-  const parKey = "par|" + parSig;
+  const selKey = "sel\n" + selSig;
+  const parKey = "par\n" + parSig;
 
   $("btnSave").disabled=true;
   coreDirty=false; setRecalcState();
@@ -622,15 +574,12 @@ async function priceNow(){
       const payloadSel = { payload:{ inputs, leadToken } };
       captureDev("devPriceReq", payloadSel);
       const resSel = await fetch(WS2_PRICE,{
-        method:"POST",
-        headers:{ "Content-Type":"text/plain" },
-        body: JSON.stringify(payloadSel),
-        signal: priceController.signal
+        method:"POST", headers:{ "Content-Type":"text/plain" },
+        body: JSON.stringify(payloadSel), signal: priceController.signal
       });
       const textSel = await resSel.text();
       if(mySeq!==priceCallSeq) return;
       captureDev("devPriceRes", textSel, 2000);
-
       let data; try{ data = JSON.parse(textSel); }catch{
         showStatus(`Pricing response not JSON (HTTP ${resSel.status} ${resSel.statusText})`,"error");
         toast("Pricing failed (non‑JSON)","error"); return;
@@ -638,28 +587,24 @@ async function priceNow(){
       if(data?.error && !data?.ok){
         showStatus(`Pricing error: ${data.error}`,"error"); toast("Pricing error","error"); return;
       }
-
       if (data?.quotes && data?.context){
         const q = data.quotes || {};
         const ptsList = [-1,-0.5,0,0.5,1,1.5,2,2.5,3];
         ptsList.forEach(pt=>{
           if(q[String(pt)]){
             const cloneInputs = { ...inputs, borrowerPts: pt };
-            const key = "sel|" + selSignatureFrom(cloneInputs);
+            const key = "sel\n" + selSignatureFrom(cloneInputs);
             cacheSet(key, q[String(pt)]);
           }
         });
         if(q["0"]) cacheSet(parKey, q["0"]);
-        lastQuotePar = q["0"];
-        lastParSig   = parSig;
+        lastQuotePar = q["0"]; lastParSig = parSig;
 
         quoteWith = q[String(inputs.borrowerPts)] ?? q["0"];
-        cacheSet(selKey, quoteWith);
-        lastQuote = quoteWith;
+        cacheSet(selKey, quoteWith); lastQuote = quoteWith;
 
         renderKPIs(quoteWith);
         fillCard("with", computeCardData(quoteWith, inputs));
-
         const parInputsForUI = { ...inputs, borrowerPts: 0, loanCalc: computeFinancedLoan(inputs.loan) };
         fillCard("par", computeCardData(q["0"], parInputsForUI));
         renderDelta(quoteWith, q["0"], inputs);
@@ -672,12 +617,9 @@ async function priceNow(){
         lastProgramForBucket = inputs.programUI;
         return;
       }
-
-      // Non-shaped fallback
+      // fallback
       quoteWith = data;
-      cacheSet(selKey, quoteWith);
-      lastQuote = quoteWith;
-
+      cacheSet(selKey, quoteWith); lastQuote = quoteWith;
       renderKPIs(quoteWith);
       fillCard("with", computeCardData(quoteWith, inputs));
       $("btnSave").disabled=false;
@@ -687,16 +629,13 @@ async function priceNow(){
     // Par from cache?
     let quotePar = cacheGet(parKey);
     const onlyPointsChanged = (lastParSig === parSig) && !!lastQuotePar;
-
     if(quotePar){
       const parInputsForUI = { ...inputs, borrowerPts: 0, loanCalc: computeFinancedLoan(inputs.loan) };
       fillCard("par", computeCardData(quotePar, parInputsForUI));
       renderDelta(quoteWith, quotePar, inputs);
       showStatus("Priced successfully.","ok");
       toast("Pricing complete","success");
-      lastQuotePar = quotePar;
-      lastParSig   = parSig;
-
+      lastQuotePar = quotePar; lastParSig = parSig;
       lastPricedFicoBucket = ficoBucketKey(inputs.programUI, inputs.ficoEntered);
       lastProgramForBucket = inputs.programUI;
       return;
@@ -709,7 +648,6 @@ async function priceNow(){
       showStatus("Priced successfully.","ok");
       toast("Pricing complete","success");
       cacheSet(parKey, lastQuotePar);
-
       lastPricedFicoBucket = ficoBucketKey(inputs.programUI, inputs.ficoEntered);
       lastProgramForBucket = inputs.programUI;
       return;
@@ -720,17 +658,13 @@ async function priceNow(){
     parInputs.loanCalc = computeFinancedLoan(parInputs.loan);
     const payloadPar = { payload:{ inputs: parInputs, leadToken } };
     captureDev("devPriceReqPar", payloadPar);
-
     const resPar = await fetch(WS2_PRICE,{
-      method:"POST",
-      headers:{ "Content-Type":"text/plain" },
-      body: JSON.stringify(payloadPar),
-      signal: priceController.signal
+      method:"POST", headers:{ "Content-Type":"text/plain" },
+      body: JSON.stringify(payloadPar), signal: priceController.signal
     });
     const textPar = await resPar.text();
     if(mySeq!==priceCallSeq) return;
     captureDev("devPriceResPar", textPar, 2000);
-
     try{ quotePar = JSON.parse(textPar); }catch{
       showStatus(`Par Price response not JSON (HTTP ${resPar.status} ${resPar.statusText})`,"warn");
       toast("Par Price failed (non‑JSON)","warn");
@@ -741,20 +675,15 @@ async function priceNow(){
       toast("Par Price error","warn");
       return;
     }
-
-    cacheSet(parKey, quotePar);
-    lastQuotePar = quotePar;
-    lastParSig   = parSig;
-
+    cacheSet(parKey, quotePar); lastQuotePar = quotePar; lastParSig = parSig;
     const parInputsForUI = { ...inputs, borrowerPts: 0, loanCalc: computeFinancedLoan(inputs.loan) };
     fillCard("par", computeCardData(quotePar, parInputsForUI));
     renderDelta(quoteWith, quotePar, inputs);
-
     showStatus("Priced successfully.","ok");
     toast("Pricing complete","success");
-
     lastPricedFicoBucket = ficoBucketKey(inputs.programUI, inputs.ficoEntered);
     lastProgramForBucket = inputs.programUI;
+
   }catch(err){
     if (err?.name === "AbortError") return;
     showStatus(`Pricing failed: ${err?.message || "Network error"}`,"error");
@@ -762,11 +691,7 @@ async function priceNow(){
   }
 }
 
-function maybeReprice(){
-  if(!gated || coreDirty) return;
-  clearTimeout(debounceTimer);
-  debounceTimer=setTimeout(priceNow, 220);
-}
+function maybeReprice(){ if(!gated || coreDirty) return; clearTimeout(debounceTimer); debounceTimer=setTimeout(priceNow, 220); }
 
 /* ---------- Save Quote ---------- */
 async function saveQuote(){
@@ -789,7 +714,6 @@ async function saveQuote(){
 
 /* ---------- Lead modal ---------- */
 function openLeadModal(){
-  // Require Loan Structure + ZIP before opening
   if (!zipResolved || !loanStructureComplete()){
     toast("Please complete Property ZIP and Loan Structure first.","warn");
     refreshUnlockButton();
@@ -798,19 +722,13 @@ function openLeadModal(){
   $("leadModal").setAttribute("aria-hidden","false"); clearLeadErrors(); $("leadFirst").focus();
 }
 function closeLeadModal(){ $("leadModal").setAttribute("aria-hidden","true"); }
-function clearLeadErrors(){
-  ["leadFirstErr","leadLastErr","leadPhoneErr","leadEmailErr","leadTimelineErr","leadErr"].forEach(id=>{ const el=$(id); el.style.display="none"; el.textContent=""; });
-}
+function clearLeadErrors(){ ["leadFirstErr","leadLastErr","leadPhoneErr","leadEmailErr","leadTimelineErr","leadErr"].forEach(id=>{ const el=$(id); el.style.display="none"; el.textContent=""; }); }
 function digitsOnlyPhone(raw){ return String(raw||"").replace(/\D/g,""); }
 function isClearlyFakePhone(d10){
   if (d10.length !== 10) return true;
-  const allSame = /^(\d)\1{9}$/.test(d10);
-  if (allSame) return true;
-  if (d10 === "1234567890") return true;
+  if (/^(\d)\1{9}$/.test(d10) || d10 === "1234567890") return true;
   const area = d10.slice(0,3), exch = d10.slice(3,6);
-  const invalidArea = area === "000" || area === "555";
-  const invalidExch = exch === "000" || exch === "555";
-  if (invalidArea || invalidExch) return true;
+  if (["000","555"].includes(area) || ["000","555"].includes(exch)) return true;
   return false;
 }
 function validateLeadInputs(){
@@ -825,16 +743,8 @@ function validateLeadInputs(){
   if (!nameRe.test(first)){ $("leadFirstErr").textContent="Please enter at least 2 letters."; $("leadFirstErr").style.display="block"; ok=false; }
   if (!nameRe.test(last)){ $("leadLastErr").textContent="Please enter at least 2 letters."; $("leadLastErr").style.display="block"; ok=false; }
   const phoneRe = /^\s*(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})\s*$/;
-  if (!phoneRe.test(phone)){
-    $("leadPhoneErr").textContent="Enter a valid 10‑digit phone (US/Canada).";
-    $("leadPhoneErr").style.display="block"; ok=false;
-  } else {
-    const d = digitsOnlyPhone(phone);
-    if (isClearlyFakePhone(d)){
-      $("leadPhoneErr").textContent="Please enter a real mobile/phone number (not a placeholder like 555‑555‑5555).";
-      $("leadPhoneErr").style.display="block"; ok=false;
-    }
-  }
+  if (!phoneRe.test(phone)){ $("leadPhoneErr").textContent="Enter a valid 10‑digit phone (US/Canada)."; $("leadPhoneErr").style.display="block"; ok=false; }
+  else if (isClearlyFakePhone(digitsOnlyPhone(phone))){ $("leadPhoneErr").textContent="Please enter a real mobile/phone number (not a placeholder like 555‑555‑5555)."; $("leadPhoneErr").style.display="block"; ok=false; }
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   if (!emailRe.test(email)){ $("leadEmailErr").textContent="Enter a valid email address."; $("leadEmailErr").style.display="block"; ok=false; }
   if (!timeline){ $("leadTimelineErr").textContent="Please select a timeline."; $("leadTimelineErr").style.display="block"; ok=false; }
@@ -844,100 +754,51 @@ async function upsertLead(){
   const v = validateLeadInputs();
   if (!v.ok) return false;
   const textOk = $("leadTextOK").checked;
-  const payload = { payload: {
-    first: v.first, last: v.last, phone: v.phone, email: v.email,
-    timeline: v.timeline, textOk,
-    source: "UI-W4", subjectZip: normalizeZip($("zip").value)
-  }}; 
+  const payload = { payload: { first: v.first, last: v.last, phone: v.phone, email: v.email, timeline: v.timeline, textOk, source: "UI-W4", subjectZip: normalizeZip($("zip").value) }};
   if (leadController) leadController.abort();
   leadController = new AbortController();
   showStatus("Submitting…","info");
   $("leadSubmit").disabled = true;
   try{
-    const res = await fetch(WS3_LEADS, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify(payload),
-      signal: leadController.signal
-    });
+    const res = await fetch(WS3_LEADS, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(payload), signal: leadController.signal });
     const text = await res.text();
     let data; try { data = JSON.parse(text); } catch { data = { ok:false, error:text || "Non‑JSON response" }; }
     if (!data?.ok || !data?.leadToken){
-      $("leadErr").style.display = "block";
-      $("leadErr").textContent = data?.error || text || "Submission failed.";
-      showStatus("Submission failed.","error");
-      toast("Submission failed","error");
-      $("leadSubmit").disabled = false;
-      return false;
+      $("leadErr").style.display = "block"; $("leadErr").textContent = data?.error || text || "Submission failed.";
+      showStatus("Submission failed.","error"); toast("Submission failed","error");
+      $("leadSubmit").disabled = false; return false;
     }
-    leadToken = data.leadToken;
-    localStorage.setItem("azm_leadToken", leadToken);
-    localStorage.setItem("azm_leadEmail", v.email);
-    gated = true;
-
-    // Show results panel now that we're unlocked
-    toggleResultsVisibility(true);
-
-    // Gray out Get My Results after unlock
-    const gateBtn = $("btnGate");
-    gateBtn.disabled = true;
-    gateBtn.textContent = "Unlocked";
-    gateBtn.title = "You’re unlocked";
-
-    showStatus("Saved. Pricing…","ok");
-    toast("Unlocked","success");
-    $("leadSubmit").disabled = false;
-    return true;
+    leadToken = data.leadToken; localStorage.setItem("azm_leadToken", leadToken); localStorage.setItem("azm_leadEmail", v.email);
+    gated = true; toggleResultsVisibility(true);
+    const gateBtn = $("btnGate"); gateBtn.disabled = true; gateBtn.textContent = "Unlocked"; gateBtn.title = "You’re unlocked";
+    showStatus("Saved. Pricing…","ok"); toast("Unlocked","success");
+    $("leadSubmit").disabled = false; return true;
   }catch(err){
-    if (err?.name === "AbortError"){
-      showStatus("Submission canceled.","warn");
-      $("leadSubmit").disabled = false;
-      return false;
-    }
-    $("leadErr").style.display = "block";
-    $("leadErr").textContent = err?.message || "Submission error.";
-    showStatus("Submission error.","error");
-    toast("Submission error","error");
-    $("leadSubmit").disabled = false;
-    return false;
+    if (err?.name === "AbortError"){ showStatus("Submission canceled.","warn"); $("leadSubmit").disabled = false; return false; }
+    $("leadErr").style.display = "block"; $("leadErr").textContent = err?.message || "Submission error.";
+    showStatus("Submission error.","error"); toast("Submission error","error"); $("leadSubmit").disabled = false; return false;
   }
 }
 
 /* ---------- Buttons & events ---------- */
 function bindEvents(){
-  // Gate
   $("btnGate").addEventListener("click", () => {
     if(!zipResolved || !loanStructureComplete()){ toast("Please complete Property ZIP and Loan Structure first.","warn"); refreshUnlockButton(); return; }
-    if (gated && leadToken){ /* already unlocked */ return; }
+    if (gated && leadToken){ return; }
     openLeadModal();
   });
-  // Lead modal controls
-  $("leadSubmit").addEventListener("click", async () => {
-    const ok = await upsertLead();
-    if (ok){ closeLeadModal(); priceNow(); }
-  });
-  $("cancelLead").addEventListener("click", () => {
-    if (leadController) leadController.abort();
-    closeLeadModal();
-  });
-  $("closeLead").addEventListener("click", () => {
-    if (leadController) leadController.abort();
-    closeLeadModal();
-  });
-  $("leadModalBackdrop").addEventListener("click", () => {
-    if (leadController) leadController.abort();
-    closeLeadModal();
-  });
+  $("leadSubmit").addEventListener("click", async () => { const ok = await upsertLead(); if (ok){ closeLeadModal(); priceNow(); } });
+  $("cancelLead").addEventListener("click", () => { if (leadController) leadController.abort(); closeLeadModal(); });
+  $("closeLead").addEventListener("click", () => { if (leadController) leadController.abort(); closeLeadModal(); });
+  $("leadModalBackdrop").addEventListener("click", () => { if (leadController) leadController.abort(); closeLeadModal(); });
 
-  // Re-Calculate
   $("btnRecalc").addEventListener("click", () => {
     if(!gated){ toast("Complete Get My Results first","warn"); return; }
     if(!loanStructureComplete()){ toast("Please complete Loan Structure fields.","warn"); return; }
     priceNow();
   });
-  // Save
   $("btnSave").addEventListener("click", saveQuote);
-  // Reset (keep ZIP & gating)
+
   $("btnReset").addEventListener("click", () => {
     const keepZip = $("zip").value; const keepResolved = zipResolved;
     $("program").value="CONV";
@@ -950,29 +811,18 @@ function bindEvents(){
     updateProgramPanels();
     enforceLtvOnContextChange();
     renderLoanLine();
-    $("zip").value = keepZip;
-    zipResolved = keepResolved;
-    refreshUnlockButton();
+    $("zip").value = keepZip; zipResolved = keepResolved; refreshUnlockButton();
     coreDirty = true; setRecalcState();
-    $("btnSave").disabled = true;
-    ["kpiRate","kpiTotal",
-     "with_loanCalc","with_rate","with_housing","with_pi","with_mi","with_taxes","with_ins","with_hoa",
-     "par_loanCalc","par_rate","par_housing","par_pi","par_mi","par_taxes","par_ins","par_hoa",
-     "delta_payment","delta_rateCost"
-    ].forEach(id => { $(id).textContent = "—"; });
+    ["kpiRate","kpiTotal","with_loanCalc","with_rate","with_housing","with_pi","with_mi","with_taxes","with_ins","with_hoa","par_loanCalc","par_rate","par_housing","par_pi","par_mi","par_taxes","par_ins","par_hoa","delta_payment","delta_rateCost"].forEach(id => { $(id).textContent = "—"; });
     $("resultsDelta").style.display = "none";
-    $("delta_payment").classList.remove("delta-pos","delta-neg");
-    $("delta_rateCost").classList.remove("delta-pos","delta-neg");
-    lastQuotePar = null; lastParSig = null;
-    lastPricedFicoBucket = null; lastProgramForBucket = null;
+    ["delta_payment","delta_rateCost"].forEach(id=> $(id).className = "kpi-value");
+    lastQuotePar = null; lastParSig = null; lastPricedFicoBucket = null; lastProgramForBucket = null;
     showStatus("Pending changes — click Re‑Calculate to update pricing.","info");
   });
 
-  // ZIP
   $("zip").addEventListener("input", () => { onZipInput(); refreshUnlockButton(); markCoreDirty(); });
   $("zip").addEventListener("keydown", (e) => { if(e.key==="Enter" && !$("btnGate").disabled){ e.preventDefault(); $("btnGate").click(); } });
 
-  // Program/Txn/Term
   $("program").addEventListener("change", () => {
     rebuildTxnOptions(); updateProgramPanels(); enforceLtvOnContextChange(); markCoreDirty();
     lastPricedFicoBucket = null; lastProgramForBucket = null;
@@ -982,70 +832,79 @@ function bindEvents(){
   });
   $("term").addEventListener("change", () => { markCoreDirty(); });
 
-  // Structure (core) + unlock state
+  // Structure (Include PMI follows LTV strictly > 80)
   $("value").addEventListener("input", () => {
     if(syncLock) return; syncLock=true; recomputeFromValue(); syncLock=false;
-    seedTaxesInsFromState(); renderLoanLine(); refreshUnlockButton(); markCoreDirty();
+    seedTaxesInsFromState(); renderLoanLine(); renderProgFactors(); refreshUnlockButton(); markCoreDirty();
   });
-  $("ltv").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromLtv(); syncLock=false; renderLoanLine(); refreshUnlockButton(); markCoreDirty(); });
-  $("loan").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromLoan(); syncLock=false; renderLoanLine(); refreshUnlockButton(); markCoreDirty(); });
-  $("equity").addEventListener("input", () => { if(syncLock) return; syncLock=true; recomputeFromEquity();syncLock=false; renderLoanLine(); refreshUnlockButton(); markCoreDirty(); });
+  // IMPORTANT: allow free typing; compute & cap but DO NOT format on each keystroke
+  $("ltv").addEventListener("input", () => {
+    if(syncLock) return; syncLock=true; recomputeFromLtv({format:false}); syncLock=false;
+    renderLoanLine(); renderProgFactors(); refreshUnlockButton(); markCoreDirty();
+  });
+  $("ltv").addEventListener("blur", () => { formatLtvOnBlur(); syncFromLtvCore(true); });
 
-  // Taxes & Insurance (live unless core dirty)
+  $("loan").addEventListener("input", () => {
+    if(syncLock) return; syncLock=true; recomputeFromLoan(); syncLock=false;
+    renderLoanLine(); renderProgFactors(); refreshUnlockButton(); markCoreDirty();
+  });
+  $("equity").addEventListener("input", () => {
+    if(syncLock) return; syncLock=true; recomputeFromEquity();syncLock=false;
+    renderLoanLine(); renderProgFactors(); refreshUnlockButton(); markCoreDirty();
+  });
+
+  // Taxes & Insurance
   ["taxes","ins","hoa"].forEach(id => $(id).addEventListener("input", () => {
     if(!gated) return;
     if(!coreDirty) maybeReprice();
     else showStatus("Pending changes — click Re‑Calculate to update pricing.","info");
   }));
 
-  // FICO slider: update chip live; reprice on release (bucket change)
-  $("ficoRange").addEventListener("input", () => {
-    const v=$("ficoRange").value; $("fico").value=v; $("ficoChip").textContent=v;
-  });
+  // FICO slider & text sync
+  $("ficoRange").addEventListener("input", () => { const v=$("ficoRange").value; $("fico").value=v; $("ficoChip").textContent=v; });
   $("ficoRange").addEventListener("change", () => {
-    const programUI = $("program").value;
-    const entered = Number($("fico").value);
+    const programUI = $("program").value; const entered = Number($("fico").value);
     const bucket = ficoBucketKey(programUI, entered);
     if (lastPricedFicoBucket && lastProgramForBucket===programUI && bucket===lastPricedFicoBucket) return;
     priceNow();
   });
-
-  // FICO manual entry: commit on Enter or blur; validate & bucket check
-  $("fico").addEventListener("keydown", (e) => {
-    if(e.key==="Enter"){ e.preventDefault(); e.currentTarget.blur(); }
+  $("fico").addEventListener("input", () => {
+    const raw = $("fico").value.trim(); const n = Number(raw); if (!isFinite(n)) return;
+    const vText = Math.max(300, Math.min(850, Math.round(n)));
+    const vSlider = Math.max(500, Math.min(850, vText));
+    $("ficoRange").value = String(vSlider);
+    $("ficoChip").textContent = String(vText);
   });
+  $("fico").addEventListener("keydown", (e) => { if(e.key==="Enter"){ e.preventDefault(); e.currentTarget.blur(); } });
   $("fico").addEventListener("blur", () => {
-    const vRaw = $("fico").value.trim();
-    const v = Number(vRaw);
-    const msgEl = $("ficoMsg");
-    if(!isFinite(v) || v<300 || v>850){
-      msgEl.textContent = "Enter a valid FICO between 300 and 850.";
-      msgEl.style.display = "block";
-      $("fico").classList.add("input-error");
-      return;
-    }
-    $("fico").classList.remove("input-error");
-    msgEl.style.display = "none";
-
+    let v = Number($("fico").value); if(!isFinite(v)) v = 740;
+    v = Math.max(300, Math.min(850, Math.round(v)));
+    $("fico").value = String(v); $("ficoChip").textContent = String(v);
+    $("ficoRange").value = String(Math.max(500, Math.min(850, v)));
     const programUI = $("program").value;
     const bucket = ficoBucketKey(programUI, v);
     if (lastPricedFicoBucket && lastProgramForBucket===programUI && bucket===lastPricedFicoBucket) return;
     priceNow();
   });
 
-  // Points (0.5 steps)
+  // Points: slider & number step input
   $("pointsRange").addEventListener("input", () => {
     let v=Number($("pointsRange").value); if(!isFinite(v)) v=0;
-    v=Math.max(-1,Math.min(3,Math.round(v*2)/2));
+    v=Math.max(-1,Math.min(3,v));
     $("points").value = String(v);
     $("pointsChip").textContent = `${v.toFixed(1)}%`;
     maybeReprice();
   });
   $("points").addEventListener("input", () => {
     let v=Number($("points").value); if(!isFinite(v)) v=0;
-    v=Math.max(-1,Math.min(3,Math.round(v*2)/2));
+    v=Math.max(-1,Math.min(3,v));
     $("pointsRange").value = String(v);
-    $("points").value = String(v);
+    $("pointsChip").textContent = `${v.toFixed(1)}%`;
+  });
+  $("points").addEventListener("blur", () => {
+    let v = Number($("points").value); if (!isFinite(v)) v = 0;
+    v = Math.max(-1, Math.min(3, Math.round(v*2)/2));
+    $("points").value = String(v); $("pointsRange").value = String(v);
     $("pointsChip").textContent = `${v.toFixed(1)}%`;
     maybeReprice();
   });
