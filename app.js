@@ -1,4 +1,4 @@
-/* AZM – W4 UX pass 19
+/* AZM – W4 UX pass 19b
  - Keep: footer indicator; PMI > 80% rule; FICO text↔slider; points step input; free LTV typing (3-decimal on blur)
  - Defaults: value=400000, loan=380000, equity=20000 (auto-kept), others unchanged
  - Timeline/consent text updated in index.html; checkbox default checked handled by HTML
