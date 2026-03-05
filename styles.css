@@ -13,7 +13,7 @@ body{ margin:0; font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Can
 .topbar h1{ margin:0 0 6px; font-size:18px; font-weight:700; }
 .status{ font-size:13px; color:var(--muted); }
 .status.ok{ color:var(--ok); } .status.warn{ color:var(--warn); } .status.error{ color:var(--bad); } .status.info{ color:var(--primary); }
-.app{ padding-top:12px; padding-bottom:calc(var(--footer-h) + 20px); }
+.app{ padding-top:12px; padding-bottom:calc(var(--footer-h) + 20px); } /* ensure content not behind footer */
 .panel{
  background:var(--panel); border:1px solid var(--line); border-radius:var(--radius);
  box-shadow:var(--shadow); padding:16px; margin-bottom:14px;
@@ -35,9 +35,13 @@ body{ margin:0; font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Can
 .input-error{ border-color:var(--bad) !important; box-shadow:0 0 0 3px rgba(220,38,38,.12) !important; }
 .locked{ color:#94a3b8; background:#f1f5f9; }
 .inline{ display:inline-flex; align-items:center; gap:8px; margin-top:8px; color:var(--muted); font-size:14px; }
+
+/* Pills */
 .pill-group{ display:flex; flex-wrap:wrap; gap:8px; }
 .pill{ display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); padding:8px 12px; border-radius:999px; font-size:14px; color:#0b1220; background:#fff; user-select:none; }
 .pill input{ accent-color:var(--primary); }
+
+/* Slider rows */
 .slider-row{ display:flex; align-items:center; gap:10px; }
 input[type="range"]{ width:100%; accent-color:var(--primary); }
 .chip{ background:#e0f2fe; color:#0c4a6e; padding:4px 10px; border-radius:999px; font-weight:700; font-size:13px; white-space:nowrap; }
@@ -62,6 +66,14 @@ input[type="range"]{ width:100%; accent-color:var(--primary); }
 .msg.bad{ color:var(--bad); }
 .loanline{ font-size:14px; color:#0b1220; margin:2px 0 6px; }
 .helper-notes{ font-size:13px; color:#475569; margin:0 0 10px; }
+
+/* ZIP “response needed” highlight */
+.placeholder-required::placeholder{ color:#94a3b8; }
+.placeholder-required:placeholder-shown{ border-color:#fbbf24; background:#fffbea; }
+
+/* Delta classes — negative => green, positive => red */
+.delta-pos{ color:var(--ok); }
+.delta-neg{ color:var(--bad); }
 
 /* ● badge for Re‑Calculate */
 .dot{
@@ -105,10 +117,6 @@ input[type="range"]{ width:100%; accent-color:var(--primary); }
 .kv:last-child{ border-bottom:none; }
 .kv span:first-child{ color:#475569; }
 .kv span:last-child{ font-weight:700; color:#0b1220; }
-
-/* Delta classes — negative => green, positive => red */
-.delta-pos{ color:var(--ok); }
-.delta-neg{ color:var(--bad); }
 
 /* Footer */
 .footer-bar{
