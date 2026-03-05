@@ -1,8 +1,7 @@
-/* AZM – W4 UX pass 18
-   - Fix: LTV input now allows decimals freely; we format to 3 decimals on blur (not on each keystroke)
-   - Include PMI only when LTV > 80% (strict)
-   - Footer indicator mirrors status ("Ready" / "Pricing…" / "Priced successfully.", etc.)
-   - FICO text↔slider sync (slider min=500; text 300–850) and points step input preserved
+/* AZM – W4 UX pass 19
+   - Keep: footer indicator; PMI > 80% rule; FICO text↔slider; points step input; free LTV typing (3-decimal on blur)
+   - Defaults: value=400000, loan=380000, equity=20000 (auto-kept), others unchanged
+   - Timeline/consent text updated in index.html; checkbox default checked handled by HTML
 */
 const $ = (id) => document.getElementById(id);
 
@@ -121,7 +120,7 @@ function rebuildTxnOptions(){
   el.value = Array.from(el.options).some(o=>o.value===keep) ? keep : "PURCHASE";
 }
 
-/* ---------- Program options (PMI visibility: LTV > 80%) ---------- */
+/* ---------- Program options: PMI visibility rule (>80%) ---------- */
 function pillCheckbox(id, label, checked){
   const labelEl=document.createElement("label");
   labelEl.className="pill";
@@ -232,7 +231,6 @@ function getMaxLTV(){
 function showConvPurchaseCapMsg(){ showMsg("ltvMsg","LTV capped at 95% for CONV PURCHASE unless First‑Time Homebuyer is selected."); }
 function showMsg(id,text){ const el=$(id); if(!text){ el.style.display="none"; el.textContent=""; return; } el.textContent=text; el.style.display="block"; }
 
-/** applyLtvCap: optionally format field value */
 function applyLtvCap(ltv, {format=true} = {}){
   const kind=currentProgKind(), txn=$("txn").value;
   const max=getMaxLTV();
@@ -244,13 +242,9 @@ function applyLtvCap(ltv, {format=true} = {}){
   } else {
     showMsg("ltvMsg","");
   }
-  if(format && Number.isFinite(out)){
-    $("ltv").value = String(Math.round(out*1000)/1000); // normalize to 3 decimals on demand
-  }
+  if(format && Number.isFinite(out)){ $("ltv").value = String(Math.round(out*1000)/1000); }
   return out;
 }
-
-/** recomputeFromLtv: pass format=false during typing, true on blur */
 function recomputeFromLtv({format=false} = {}){
   const v=parseNum($("value")); let ltv=parseNum($("ltv"));
   if(!Number.isFinite(v)||v<=0||!Number.isFinite(ltv)) return;
@@ -279,7 +273,6 @@ function recomputeFromEquity(){
   let ltv=(loan/v)*100; ltv=applyLtvCap(ltv, {format:false});
   const adj=Math.round(v*(ltv/100));
   $("loan").value=String(adj);
-  // do not force-format LTV here; let blur handler do it
 }
 function enforceLtvOnContextChange(){
   if(syncLock) return; syncLock=true;
@@ -287,13 +280,11 @@ function enforceLtvOnContextChange(){
   if(Number.isFinite(v)&&v>0){ recomputeFromLtv({format:false}); }
   syncLock=false; renderLoanLine();
 }
-/** Format LTV to 3 decimals on blur */
 function formatLtvOnBlur(){
   let n = parseFloat($("ltv").value);
   if(!Number.isFinite(n)) return;
   $("ltv").value = String(Math.round(n*1000)/1000);
 }
-
 function syncFromLtvCore(forceFormat=false){
   if(syncLock) return; syncLock=true;
   recomputeFromLtv({format:!!forceFormat}); renderLoanLine();
@@ -340,9 +331,7 @@ function renderHelperNotes(){
     msg=(txn==="IRRRL")
       ? "VA IRRRL: Funding Fee 0.50% is financed automatically unless exempt."
       : "VA: Funding Fee financed automatically unless exempt; % varies by first‑use and down payment.";
-  } else {
-    msg="";
-  }
+  } else { msg=""; }
   $("helperNotes").textContent=msg;
 }
 
@@ -405,6 +394,7 @@ function currentInputs(){
   const program=backendProgram();
   const txn=$("txn").value;
   const term=360;
+
   const baseLoan=Number($("loan").value || 0);
   const ltv=Number($("ltv").value || 0);
 
@@ -620,8 +610,10 @@ async function priceNow(){
       // fallback
       quoteWith = data;
       cacheSet(selKey, quoteWith); lastQuote = quoteWith;
+
       renderKPIs(quoteWith);
       fillCard("with", computeCardData(quoteWith, inputs));
+
       $("btnSave").disabled=false;
       showStatus("Priced successfully. Getting Par Price…","ok");
     }
@@ -754,29 +746,58 @@ async function upsertLead(){
   const v = validateLeadInputs();
   if (!v.ok) return false;
   const textOk = $("leadTextOK").checked;
-  const payload = { payload: { first: v.first, last: v.last, phone: v.phone, email: v.email, timeline: v.timeline, textOk, source: "UI-W4", subjectZip: normalizeZip($("zip").value) }};
+  const payload = { payload: {
+    first: v.first, last: v.last, phone: v.phone, email: v.email,
+    timeline: v.timeline, textOk,
+    source: "UI-W4", subjectZip: normalizeZip($("zip").value)
+  }};
   if (leadController) leadController.abort();
   leadController = new AbortController();
   showStatus("Submitting…","info");
   $("leadSubmit").disabled = true;
   try{
-    const res = await fetch(WS3_LEADS, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(payload), signal: leadController.signal });
+    const res = await fetch(WS3_LEADS, {
+      method: "POST", headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(payload), signal: leadController.signal
+    });
     const text = await res.text();
     let data; try { data = JSON.parse(text); } catch { data = { ok:false, error:text || "Non‑JSON response" }; }
     if (!data?.ok || !data?.leadToken){
-      $("leadErr").style.display = "block"; $("leadErr").textContent = data?.error || text || "Submission failed.";
-      showStatus("Submission failed.","error"); toast("Submission failed","error");
-      $("leadSubmit").disabled = false; return false;
+      $("leadErr").style.display = "block";
+      $("leadErr").textContent = data?.error || text || "Submission failed.";
+      showStatus("Submission failed.","error");
+      toast("Submission failed","error");
+      $("leadSubmit").disabled = false;
+      return false;
     }
-    leadToken = data.leadToken; localStorage.setItem("azm_leadToken", leadToken); localStorage.setItem("azm_leadEmail", v.email);
-    gated = true; toggleResultsVisibility(true);
-    const gateBtn = $("btnGate"); gateBtn.disabled = true; gateBtn.textContent = "Unlocked"; gateBtn.title = "You’re unlocked";
-    showStatus("Saved. Pricing…","ok"); toast("Unlocked","success");
-    $("leadSubmit").disabled = false; return true;
+    leadToken = data.leadToken;
+    localStorage.setItem("azm_leadToken", leadToken);
+    localStorage.setItem("azm_leadEmail", v.email);
+    gated = true;
+
+    toggleResultsVisibility(true);
+
+    const gateBtn = $("btnGate");
+    gateBtn.disabled = true;
+    gateBtn.textContent = "Unlocked";
+    gateBtn.title = "You’re unlocked";
+
+    showStatus("Saved. Pricing…","ok");
+    toast("Unlocked","success");
+    $("leadSubmit").disabled = false;
+    return true;
   }catch(err){
-    if (err?.name === "AbortError"){ showStatus("Submission canceled.","warn"); $("leadSubmit").disabled = false; return false; }
-    $("leadErr").style.display = "block"; $("leadErr").textContent = err?.message || "Submission error.";
-    showStatus("Submission error.","error"); toast("Submission error","error"); $("leadSubmit").disabled = false; return false;
+    if (err?.name === "AbortError"){
+      showStatus("Submission canceled.","warn");
+      $("leadSubmit").disabled = false;
+      return false;
+    }
+    $("leadErr").style.display = "block";
+    $("leadErr").textContent = err?.message || "Submission error.";
+    showStatus("Submission error.","error");
+    toast("Submission error","error");
+    $("leadSubmit").disabled = false;
+    return false;
   }
 }
 
@@ -804,7 +825,7 @@ function bindEvents(){
     $("program").value="CONV";
     rebuildTxnOptions();
     $("term").value="360";
-    $("value").value="500000"; $("ltv").value="80"; $("loan").value="400000"; $("equity").value="100000";
+    $("value").value="400000"; $("loan").value="380000"; $("equity").value="20000"; $("ltv").value="95";
     seedTaxesInsFromState();
     $("ficoRange").value="740"; $("fico").value="740"; $("ficoChip").textContent="740";
     $("pointsRange").value="0.0"; $("points").value="0.0"; $("pointsChip").textContent="0.0%";
@@ -813,7 +834,10 @@ function bindEvents(){
     renderLoanLine();
     $("zip").value = keepZip; zipResolved = keepResolved; refreshUnlockButton();
     coreDirty = true; setRecalcState();
-    ["kpiRate","kpiTotal","with_loanCalc","with_rate","with_housing","with_pi","with_mi","with_taxes","with_ins","with_hoa","par_loanCalc","par_rate","par_housing","par_pi","par_mi","par_taxes","par_ins","par_hoa","delta_payment","delta_rateCost"].forEach(id => { $(id).textContent = "—"; });
+    ["kpiRate","kpiTotal","with_loanCalc","with_rate","with_housing","with_pi","with_mi","with_taxes","with_ins","with_hoa",
+     "par_loanCalc","par_rate","par_housing","par_pi","par_mi","par_taxes","par_ins","par_hoa",
+     "delta_payment","delta_rateCost"
+    ].forEach(id => { $(id).textContent = "—"; });
     $("resultsDelta").style.display = "none";
     ["delta_payment","delta_rateCost"].forEach(id=> $(id).className = "kpi-value");
     lastQuotePar = null; lastParSig = null; lastPricedFicoBucket = null; lastProgramForBucket = null;
@@ -832,18 +856,16 @@ function bindEvents(){
   });
   $("term").addEventListener("change", () => { markCoreDirty(); });
 
-  // Structure (Include PMI follows LTV strictly > 80)
+  // Structure
   $("value").addEventListener("input", () => {
     if(syncLock) return; syncLock=true; recomputeFromValue(); syncLock=false;
     seedTaxesInsFromState(); renderLoanLine(); renderProgFactors(); refreshUnlockButton(); markCoreDirty();
   });
-  // IMPORTANT: allow free typing; compute & cap but DO NOT format on each keystroke
   $("ltv").addEventListener("input", () => {
     if(syncLock) return; syncLock=true; recomputeFromLtv({format:false}); syncLock=false;
     renderLoanLine(); renderProgFactors(); refreshUnlockButton(); markCoreDirty();
   });
   $("ltv").addEventListener("blur", () => { formatLtvOnBlur(); syncFromLtvCore(true); });
-
   $("loan").addEventListener("input", () => {
     if(syncLock) return; syncLock=true; recomputeFromLoan(); syncLock=false;
     renderLoanLine(); renderProgFactors(); refreshUnlockButton(); markCoreDirty();
@@ -887,7 +909,7 @@ function bindEvents(){
     priceNow();
   });
 
-  // Points: slider & number step input
+  // Points
   $("pointsRange").addEventListener("input", () => {
     let v=Number($("pointsRange").value); if(!isFinite(v)) v=0;
     v=Math.max(-1,Math.min(3,v));
@@ -951,12 +973,15 @@ function initialRender(){
   rebuildTxnOptions();
   updateProgramPanels();
   seedTaxesInsFromState();
+  // defaults already set in HTML; recompute equity/ltv relationships once:
+  enforceLtvOnContextChange();
   refreshUnlockButton();
+
   $("btnRecalc").disabled = true;
   $("btnSave").disabled = true;
   $("recalcDot").style.visibility = "hidden";
   renderLoanLine();
-  toggleResultsVisibility(!!leadToken); // show results only if already unlocked
+  toggleResultsVisibility(!!leadToken);
   showStatus("Pricing ready — click Get My Results to review.","info");
 }
 document.addEventListener("DOMContentLoaded", () => { bindEvents(); initialRender(); });
