@@ -4,16 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <title>AZM – W4 Lead‑Gated Mortgage UI</title>
-
   <!-- Correct CSS include -->
   <link rel="stylesheet" href="styles.css" />
-
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self';
-                 img-src 'self' data:;
-                 style-src 'self' 'unsafe-inline';
-                 script-src 'self';
-                 connect-src 'self' https://api.zippopotam.us https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com;">
+    content="default-src 'self';
+    img-src 'self' data:;
+    style-src 'self' 'unsafe-inline';
+    script-src 'self';
+    connect-src 'self' https://api.zippopotam.us https://script.google.com https://script.googleusercontent.com https://*.googleusercontent.com;">
 </head>
 <body>
   <header class="topbar">
@@ -30,10 +28,11 @@
       <div class="dev-row">
         <label class="inline">
           <input type="checkbox" id="devShowPayloads" />
-          Show request/response payloads (pricing & saveQuote)
+          Show request/response payloads (pricing & saveQuote & logger)
         </label>
         <span class="muted">For debugging only; no network changes.</span>
       </div>
+
       <details id="devPayloads" class="dev-payloads">
         <summary>Payload Inspector</summary>
         <div class="grid grid-2">
@@ -42,16 +41,24 @@
             <pre id="devPriceReq" class="codeblock small">// none</pre>
             <div class="subhead">Last Pricing Response</div>
             <pre id="devPriceRes" class="codeblock small">// none</pre>
+
             <div class="subhead">Last Par Pricing Request</div>
             <pre id="devPriceReqPar" class="codeblock small">// none</pre>
             <div class="subhead">Last Par Pricing Response</div>
             <pre id="devPriceResPar" class="codeblock small">// none</pre>
           </div>
+
           <div>
             <div class="subhead">Last SaveQuote Request</div>
             <pre id="devSaveReq" class="codeblock small">// none</pre>
             <div class="subhead">Last SaveQuote Response</div>
             <pre id="devSaveRes" class="codeblock small">// none</pre>
+
+            <!-- NEW: Dedicated Logger pane -->
+            <div class="subhead" style="margin-top:12px;">Last Logger Request</div>
+            <pre id="devLogReq" class="codeblock small">// none</pre>
+            <div class="subhead">Last Logger Response</div>
+            <pre id="devLogRes" class="codeblock small">// none</pre>
           </div>
         </div>
       </details>
@@ -178,6 +185,7 @@
           <div id="kpiTotal" class="kpi-value">—</div>
         </div>
       </div>
+
       <div class="results-cards grid grid-2">
         <div class="result-card" id="cardWith">
           <div class="card-title">Selected Price</div>
@@ -192,6 +200,7 @@
             <div class="kv"><span>HOA</span><span id="with_hoa">—</span></div>
           </div>
         </div>
+
         <div class="result-card" id="cardPar">
           <div class="card-title">Par Price</div>
           <div class="card-body">
@@ -206,6 +215,7 @@
           </div>
         </div>
       </div>
+
       <div class="results-delta grid grid-2" id="resultsDelta" style="display:none;">
         <div class="kpi">
           <div class="kpi-label">Rate Cost Difference</div>
@@ -216,6 +226,7 @@
           <div id="delta_payment" class="kpi-value">—</div>
         </div>
       </div>
+
       <div id="loanLine" class="loanline"></div>
       <div id="helperNotes" class="helper-notes"></div>
     </section>
@@ -231,10 +242,8 @@
       </button>
       <button id="btnSave" class="btn" disabled>Save Quote</button>
       <button id="btnReset" class="btn btn-ghost">Reset</button>
-
       <!-- pricing indicator -->
       <div id="footerIndicator" class="footer-indicator">Ready</div>
-
       <div id="lastQuoted" class="timestamp"></div>
     </div>
   </footer>
@@ -282,11 +291,10 @@
               <option value="ASAP">ASAP</option>
               <option value="1-2M">1–2 Months</option>
               <option value="3-6M">3–6 Months</option>
-              <option value="JustLooking">Just Looking</option>
+              <option value="JustLooking">Just looking</option>
             </select>
             <div id="leadTimelineErr" class="msg bad" style="display:none;"></div>
           </div>
-
           <!-- Consent row -->
           <div class="form-field" style="grid-column:1/-1;">
             <label>Please text me updates</label>
@@ -297,7 +305,6 @@
             </div>
           </div>
         </div>
-
         <div id="leadErr" class="msg bad" style="display:none; margin-top:8px;"></div>
         <div class="modal-actions">
           <button id="cancelLead" class="btn">Cancel</button>
