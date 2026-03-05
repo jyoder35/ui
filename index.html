@@ -2,15 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, user-scalable=no"
-  />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
   <title>AZM – W4 Lead‑Gated Mortgage UI</title>
 
   <!-- Correct CSS include -->
   <link rel="stylesheet" href="styles.css" />
-  <!-- CSP (relaxed for Apps Script; remove while iterating locally if desired) -->
+
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self';
                  img-src 'self' data:;
@@ -96,22 +93,21 @@
       <div class="panel-title" id="structureTitle">Loan Structure</div>
       <div class="grid grid-2">
         <div class="form-field">
-          <label for="value" id="valueLabel">Property Value ($)</label>
-          <input id="value" inputmode="decimal" value="500000" />
+          <label for="value" id="valueLabel">Purchase Price ($)</label>
+          <input id="value" inputmode="decimal" value="400000" />
         </div>
         <div class="form-field">
           <label for="ltv">LTV (%)</label>
-          <!-- text input w/ decimal keyboard; we format to 3 decimals on blur, not on each keystroke -->
-          <input id="ltv" inputmode="decimal" autocomplete="off" spellcheck="false" value="80" />
+          <input id="ltv" inputmode="decimal" autocomplete="off" spellcheck="false" value="95" />
           <div id="ltvMsg" class="msg" style="display:none;"></div>
         </div>
         <div class="form-field">
           <label for="loan" id="loanLabel">Base Loan Amount ($)</label>
-          <input id="loan" inputmode="decimal" value="400000" />
+          <input id="loan" inputmode="decimal" value="380000" />
         </div>
         <div class="form-field">
-          <label for="equity" id="equityLabel">Equity ($)</label>
-          <input id="equity" inputmode="decimal" value="100000" />
+          <label for="equity" id="equityLabel">Down Payment ($)</label>
+          <input id="equity" inputmode="decimal" value="20000" />
         </div>
       </div>
       <div id="loanStructMsg" class="msg bad" style="display:none;"></div>
@@ -283,21 +279,25 @@
             <label for="leadTimeline">Timeline</label>
             <select id="leadTimeline">
               <option value="" selected disabled>Select a timeline</option>
-              <option value="ASAP">ASAP / In Contract</option>
-              <option value="30-60">30–60 days</option>
-              <option value="60-90">60–90 days</option>
-              <option value="90+">90+ days</option>
-              <option value="JustLooking">Just looking</option>
+              <option value="ASAP">ASAP</option>
+              <option value="1-2M">1–2 Months</option>
+              <option value="3-6M">3–6 Months</option>
+              <option value="JustLooking">Just Looking</option>
             </select>
             <div id="leadTimelineErr" class="msg bad" style="display:none;"></div>
           </div>
-          <div class="form-field">
-            <label class="inline">
-              <input type="checkbox" id="leadTextOK" />
-              OK to text me about my quote
-            </label>
+
+          <!-- Consent row -->
+          <div class="form-field" style="grid-column:1/-1;">
+            <label>Please text me updates</label>
+            <div style="margin-top:6px;">
+              <label class="inline">
+                <input type="checkbox" id="leadTextOK" checked />
+              </label>
+            </div>
           </div>
         </div>
+
         <div id="leadErr" class="msg bad" style="display:none; margin-top:8px;"></div>
         <div class="modal-actions">
           <button id="cancelLead" class="btn">Cancel</button>
